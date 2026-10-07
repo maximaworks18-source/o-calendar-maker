@@ -45,11 +45,20 @@ header.top p { margin: 4px 0 0; color: var(--sub); font-size: 13px; }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 16px var(--panel-w, 340px);
+  gap: 2px;
   padding: 12px 24px 32px;
   align-items: start;
 }
+/* プレビューと設定欄の境目。ドラッグで設定欄の幅を変える */
+.splitter {
+  align-self: stretch; cursor: col-resize; touch-action: none;
+  display: flex; justify-content: center; border-radius: 4px;
+}
+.splitter::before { content: ""; width: 4px; margin: 0 auto; border-radius: 2px; background: var(--line); transition: background .15s; }
+.splitter:hover::before, .splitter.dragging::before, .splitter:focus-visible::before { background: var(--accent); }
+.splitter:focus-visible { outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
 /* 中身（タブの横並びなど）に押されて列が広がらないようにする */
 .layout > * { min-width: 0; }
 .stage { position: sticky; top: 12px; }
@@ -106,10 +115,12 @@ button.primary:disabled { opacity: .6; cursor: progress; }
 }
 .file-btn input { display: none; }
 .file-btn.small { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; background: var(--field); color: var(--sub); padding: 7px 0; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.font-row .field { margin-bottom: 8px; }
+.small-btn { font-size: 12px; padding: 5px 10px; }
 
 /* イラストの裏・表 */
 .layer { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
@@ -170,7 +181,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* 個別に選ぶ */
 details.custom { margin-top: 12px; }
 details.custom summary { cursor: pointer; font-size: 13px; color: var(--sub); }
-.palette { display: grid; grid-template-columns: auto repeat(8, 1fr); gap: 4px; align-items: center; margin-top: 10px; }
+.palette { display: grid; grid-template-columns: auto repeat(12, 1fr); gap: 3px; align-items: center; margin-top: 10px; }
 .palette span { font-size: 11px; color: var(--sub); padding-right: 4px; }
 .palette button { aspect-ratio: 1; padding: 0; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
 .palette button.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
@@ -182,6 +193,7 @@ input[type=color] { width: 44px; height: 28px; padding: 0; border: 1px solid var
 @media (max-width: 820px) {
   header.top { padding: 16px 16px 4px; }
   .layout { grid-template-columns: 1fr; padding: 8px 16px 24px; gap: 16px; }
+  .splitter { display: none; }
   .stage { position: static; }
   .canvas-wrap { padding: 12px; }
 }
@@ -217,6 +229,8 @@ footer.foot b { font-weight: 600; color: var(--ink); }
     <p class="size-note" id="sizeNote"></p>
   </section>
 
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="設定欄の幅（ドラッグ、または左右キーで変更。ダブルクリックで元に戻す）" tabindex="0"></div>
+
   <aside class="panel">
     <section class="group">
       <h2>年月</h2>
@@ -227,6 +241,20 @@ footer.foot b { font-weight: 600; color: var(--ink); }
         <select id="month" aria-label="月"></select>
         <span>月</span>
         <button class="icon" id="nextMonth" aria-label="次の月">›</button>
+      </div>
+      <div class="field" style="margin-top:12px">週の始まり
+        <div class="seg" id="weekStart" role="radiogroup" aria-label="週の始まり">
+          <button type="button" data-value="1" role="radio">月曜</button>
+          <button type="button" data-value="0" role="radio">日曜</button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">曜日の表記
+        <div class="seg" id="weekLabel" role="radiogroup" aria-label="曜日の表記">
+          <button type="button" data-value="ja" role="radio">月</button>
+          <button type="button" data-value="lower" role="radio">mon</button>
+          <button type="button" data-value="upper" role="radio">MON</button>
+          <button type="button" data-value="initial" role="radio">M</button>
+        </div>
       </div>
     </section>
 
@@ -281,6 +309,21 @@ footer.foot b { font-weight: 600; color: var(--ink); }
     </section>
 
     <section class="group">
+      <h2>書体</h2>
+      <div class="font-row" data-font="num">
+        <label class="field">数字・曜日<select></select></label>
+      </div>
+      <div class="font-row" data-font="credit">
+        <label class="field">クレジット<select></select></label>
+      </div>
+      <div class="row wrap">
+        <label class="file-btn small"><input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"><span>書体ファイルを読み込む</span></label>
+        <button id="localFonts" class="small-btn" hidden>パソコンの書体を一覧に出す</button>
+      </div>
+      <p class="hint" id="fontHint" style="margin:8px 0 0">読み込んだ書体は、両方の一覧に「読み込んだ書体」として出ます。</p>
+    </section>
+
+    <section class="group">
       <h2>クレジット</h2>
       <label class="field">名前<input id="credit" type="text" placeholder="空欄なら表示しない"></label>
       <label class="field">アカウント<input id="handle" type="text" placeholder="空欄なら表示しない"></label>
@@ -311,11 +354,33 @@ footer.foot b { font-weight: 600; color: var(--ink); }
 </footer>
 
 <script>
-const VERSION = 'v1.0.0';
-const NUM_FONT = '"Konkhmer Sleokchher", "Avenir Next", "Helvetica Neue", Arial, sans-serif';
-const CREDIT_FONT = '"Noto Sans", "Noto Sans JP", "Hiragino Sans", sans-serif';
+const VERSION = 'v1.1.0';
 const DPI = 300;
-const WEEK = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+// 書体の候補。family は canvas に渡す font-family（先頭がない環境では後ろに順に代わる）。
+// 日本語（曜日の「月」やクレジット）は、どの書体でも最後に Noto Sans JP で補う
+const FONT_FALLBACK = ', "Noto Sans JP", "Hiragino Sans", sans-serif';
+const SYSTEM_FONTS = [
+  { id: 'avenir',    label: 'Avenir Next',            family: '"Avenir Next", Avenir, "Segoe UI"', weight: 700 },
+  { id: 'futura',    label: 'Futura',                 family: 'Futura, "Century Gothic"', weight: 700 },
+  { id: 'helvetica', label: 'Helvetica Neue / Arial', family: '"Helvetica Neue", Helvetica, Arial', weight: 700 },
+  { id: 'georgia',   label: 'Georgia（セリフ）',       family: 'Georgia, "Times New Roman"', weight: 700 },
+  { id: 'gothic',    label: 'ヒラギノ角ゴ / 游ゴシック', family: '"Hiragino Sans", "Yu Gothic", YuGothic, Meiryo', weight: 700 },
+  { id: 'maru',      label: 'ヒラギノ丸ゴ / 丸ゴシック', family: '"Hiragino Maru Gothic ProN", "Arial Rounded MT Bold", "Yu Gothic"', weight: 400 },
+  { id: 'mincho',    label: 'ヒラギノ明朝 / 游明朝',     family: '"Hiragino Mincho ProN", "Yu Mincho", YuMincho', weight: 600 },
+];
+const FONT_CHOICES = {
+  num: [{ id: 'default', label: 'Konkhmer Sleokchher（標準）', family: '"Konkhmer Sleokchher"', weight: 400 }, ...SYSTEM_FONTS],
+  credit: [{ id: 'default', label: 'Noto Sans 細身・極太（標準）', family: '"Noto Sans"', weight: 900, stretch: 'extra-condensed' }, ...SYSTEM_FONTS],
+};
+
+// 曜日の表記。並びは日曜から（0 = 日曜）
+const WEEK_LABELS = {
+  ja:      ['日', '月', '火', '水', '木', '金', '土'],
+  lower:   ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
+  upper:   ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
+  initial: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+};
 
 // Figma「カレンダーシンプル」のフレーム。以下の寸法はすべてこの幅を基準にした値
 const D = 1024;
@@ -337,32 +402,33 @@ const DEVICES = [
 ];
 /* ---------- 色 ---------- */
 
-// Figmaのカラー変数（コレクション1）。01〜04 は淡い色、05〜08 は濃い色
-const PALETTE = [
-  { id: 'spring', label: '春',   light: ['#fce8e8', '#fff5dc', '#dff7e0', '#e6eff8'], strong: ['#e63946', '#ffca3a', '#90be6d', '#4ecdc4'] },
-  { id: 'summer', label: '夏',   light: ['#fdecf3', '#d6f7f4', '#ffe7c5', '#e4f4ff'], strong: ['#f15bb5', '#00c9a7', '#ffd166', '#118ab2'] },
-  { id: 'autumn', label: '秋',   light: ['#fce2c5', '#fff1e2', '#dce6d9', '#f7e8d4'], strong: ['#ef476f', '#ff7e67', '#06d6a0', '#4a4e69'] },
-  { id: 'winter', label: '冬',   light: ['#f8e8ed', '#e4e9f1', '#f4ebf5', '#efeff4'], strong: ['#6a0572', '#3a0ca3', '#2d6a4f', '#03071e'] },
-  { id: 'mono',   label: 'モノ', light: ['#f7f7f7', '#eaeaea', '#d6d6d6', '#c1c1c1'], strong: ['#4a4a4a', '#323232', '#1f1f1f', '#0a0a0a'] },
-];
-// これより読みにくい組み合わせはプリセットに入れない。Figmaの3月（2.57）が残る値
-const MIN_CONTRAST = 2.4;
-
-// 月ごとのおすすめ。[背景, ベース]。1・2・3・7・8・9月の1案目はFigmaで実際に使った組み合わせ
-const RECOMMEND = {
-  1:  [['#efeff4', '#e63946'], ['#f8e8ed', '#ef476f'], ['#e4e9f1', '#3a0ca3']],
-  2:  [['#efeff4', '#6a0572'], ['#f4ebf5', '#6a0572'], ['#f8e8ed', '#e63946']],
-  3:  [['#f8e8ed', '#f15bb5'], ['#fce8e8', '#e63946'], ['#fff5dc', '#4a4e69']],
-  4:  [['#fce8e8', '#f15bb5'], ['#e6eff8', '#118ab2'], ['#dff7e0', '#2d6a4f']],
-  5:  [['#dff7e0', '#2d6a4f'], ['#d6f7f4', '#118ab2'], ['#fff5dc', '#ef476f']],
-  6:  [['#e6eff8', '#3a0ca3'], ['#e4e9f1', '#6a0572'], ['#d6f7f4', '#4a4e69']],
-  7:  [['#118ab2', '#e4f4ff'], ['#e4f4ff', '#118ab2'], ['#d6f7f4', '#118ab2']],
-  8:  [['#f1e8ff', '#7b4fa7'], ['#ffe7c5', '#ef476f'], ['#ffd166', '#1f1f1f']],
-  9:  [['#e4f4ff', '#118ab2'], ['#dce6d9', '#2d6a4f'], ['#fff1e2', '#4a4e69']],
-  10: [['#fce2c5', '#4a4e69'], ['#f7e8d4', '#ef476f'], ['#03071e', '#fce2c5']],
-  11: [['#fff1e2', '#ef476f'], ['#f7e8d4', '#4a4e69'], ['#dce6d9', '#2d6a4f']],
-  12: [['#f8e8ed', '#e63946'], ['#dce6d9', '#2d6a4f'], ['#03071e', '#efeff4']],
+// 月ごとの4色。日本の伝統色をもとにした値（名前と値は一般的な伝統色の一覧による）
+const TRADITIONAL = {
+  1:  [['紅', '#cb1b45'], ['松葉色', '#42602d'], ['山吹色', '#ffb11b'], ['藍色', '#0d5661']],
+  2:  [['紅梅色', '#e16b8c'], ['梅鼠', '#9e7a7a'], ['鶯色', '#6c6a2d'], ['江戸紫', '#77428d']],
+  3:  [['桃色', '#f596aa'], ['菜の花色', '#f7d94c'], ['若竹色', '#5dac81'], ['撫子色', '#dc9fb4']],
+  4:  [['鴇色', '#eea9a9'], ['桜鼠', '#b19693'], ['萌黄', '#7ba23f'], ['藤色', '#8b81c3']],
+  5:  [['菖蒲色', '#6f3381'], ['青磁色', '#69b0ac'], ['柳染', '#91ad70'], ['檜皮色', '#854836']],
+  6:  [['紫苑色', '#8f77b5'], ['露草色', '#2ea9df'], ['縹色', '#006284'], ['苔色', '#838a2d']],
+  7:  [['浅葱色', '#33a6b8'], ['瑠璃色', '#005caf'], ['梔子色', '#f6c555'], ['珊瑚色', '#f17c67']],
+  8:  [['柑子色', '#fb9966'], ['群青色', '#51a8dd'], ['牡丹色', '#c1328e'], ['青碧', '#268785']],
+  9:  [['桔梗色', '#6a4c9c'], ['女郎花', '#ddd23b'], ['葡萄色', '#6d2e5b'], ['錆青磁', '#86a697']],
+  10: [['柿色', '#e79460'], ['苅安色', '#e9cd4c'], ['茜色', '#b54434'], ['鉄紺', '#261e47']],
+  11: [['唐紅', '#d0104c'], ['黄金色', '#c7802d'], ['胡桃色', '#947a6d'], ['千歳緑', '#36563c']],
+  12: [['臙脂', '#9f353a'], ['常磐色', '#1b813e'], ['紺色', '#0f2540'], ['銀鼠', '#91989f']],
 };
+const MONO = [['墨', '#1c1c1c'], ['鈍色', '#656765'], ['鉛色', '#787878'], ['白鼠', '#bdc0ba']];
+const SEASONS = [
+  { id: 'spring', label: '春', months: [3, 4, 5] },
+  { id: 'summer', label: '夏', months: [6, 7, 8] },
+  { id: 'autumn', label: '秋', months: [9, 10, 11] },
+  { id: 'winter', label: '冬', months: [12, 1, 2] },
+  { id: 'mono',   label: 'モノ', months: [] },
+];
+// これより読みにくい組み合わせは、選んだときに警告する
+const MIN_CONTRAST = 2.4;
+// プリセットの文字は、これ以上読みやすくなるように濃さを寄せる
+const PRESET_CONTRAST = 3;
 
 const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const rgbToHex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
@@ -392,31 +458,86 @@ function topTone(bg) {
   return rgbToHex(c.map(v => v + (255 - v) * 0.07));
 }
 
-// 季節ごとのプリセット。その季節の色どうし（淡い背景×濃い文字と、その逆）を先に並べ、
-// 続けてモノの色と合わせたものを並べる。読みにくい組み合わせは除く
-function buildPresets() {
-  const mono = PALETTE.find(p => p.id === 'mono');
-  const out = {};
-  for (const s of PALETTE) {
-    const list = [];
-    const seen = new Set();
-    const add = (bg, base) => {
-      const key = bg + base;
-      if (bg === base || seen.has(key) || contrast(bg, base) < MIN_CONTRAST) return;
-      seen.add(key);
-      list.push({ bg, base });
-    };
-    const colors = [...s.light, ...s.strong];
-    colors.forEach(bg => colors.forEach(base => add(bg, base)));
-    if (s.id !== 'mono') {
-      const monoColors = [...mono.light, ...mono.strong];
-      colors.forEach(bg => monoColors.forEach(base => add(bg, base)));
-    }
-    out[s.id] = list;
+const mix = (a, b, t) => {
+  const cb = hexToRgb(b);
+  return rgbToHex(hexToRgb(a).map((v, i) => v + (cb[i] - v) * t));
+};
+const tint = (c, t) => mix(c, '#ffffff', t);
+const shade = (c, t) => mix(c, '#000000', t);
+
+function hueOf(hex) {
+  const [r, g, b] = hexToRgb(hex).map(v => v / 255);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (d === 0) return 0;
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return h / 6;
+}
+const hueGap = (a, b) => {
+  const d = Math.abs(hueOf(a) - hueOf(b));
+  return Math.min(d, 1 - d);
+};
+
+// 文字色を、同じ色みのまま背景に対して読める濃さまで寄せる。明るい背景なら暗く、暗い背景なら明るく
+function readableOn(bg, color) {
+  const toward = luminance(bg) > 0.18 ? shade : tint;
+  for (let t = 0; t <= 0.95; t += 0.05) {
+    const c = toward(color, t);
+    if (contrast(bg, c) >= PRESET_CONTRAST) return c;
+  }
+  return toward(color, 0.95);
+}
+
+// 1色から3パターン作る
+//  同系: 同じ色みの淡い背景に、濃い文字
+//  反転: その色の背景に、淡い文字（明るい色なら同じ色みの濃い文字）
+//  差し色: 同じ月で色みがいちばん違う色の淡い背景に、その色の文字
+function patternsFor([name, key], partner, month) {
+  const out = [];
+  const pale = tint(key, 0.87);
+  out.push({ kind: '同系', name, month, bg: pale, base: readableOn(pale, key) });
+  const start = luminance(key) > 0.18 ? shade(key, 0.55) : tint(key, 0.9);
+  out.push({ kind: '反転', name, month, bg: key, base: readableOn(key, start) });
+  if (partner) {
+    const bg = tint(partner[1], 0.87);
+    out.push({ kind: '差し色', name: `${name}×${partner[0]}`, month, bg, base: readableOn(bg, key) });
   }
   return out;
 }
-const PRESETS = buildPresets();
+
+// 差し色の相手を決める。同じ相手（＝同じ背景）が重ならないように、色みの差が大きい組から順に割り当てる
+function assignPartners(colors) {
+  const pairs = [];
+  colors.forEach(a => colors.forEach(b => { if (a !== b) pairs.push([a, b, hueGap(a[1], b[1])]); }));
+  pairs.sort((x, y) => y[2] - x[2]);
+  const partner = new Map();
+  const used = new Set();
+  for (const [a, b] of pairs) {
+    if (partner.has(a) || used.has(b)) continue;
+    partner.set(a, b);
+    used.add(b);
+  }
+  return partner;
+}
+
+function monthPatterns(m) {
+  const colors = TRADITIONAL[m];
+  const partner = assignPartners(colors);
+  return colors.flatMap(c => patternsFor(c, partner.get(c), m));
+}
+
+const RECOMMEND = {};
+const PRESETS = {};
+for (let m = 1; m <= 12; m++) {
+  const list = monthPatterns(m);
+  // おすすめは、同系 → 反転 → 差し色 の順に回す
+  RECOMMEND[m] = ['同系', '反転', '差し色'].flatMap(k => list.filter(p => p.kind === k));
+}
+for (const s of SEASONS) {
+  PRESETS[s.id] = s.id === 'mono'
+    ? MONO.flatMap(c => patternsFor(c, null, 0))
+    : s.months.flatMap(monthPatterns);
+}
 const ALL_PRESETS = Object.values(PRESETS).flat();
 
 // 月の前半（15日まで）はその月、後半は翌月で始める
@@ -430,10 +551,14 @@ const state = {
   format: 'wallpaper',
   device: 'iphone',
   // ベース = 文字の色、背景 = 下の帯の色。上の部分の色は背景から自動で決める
-  colors: { bg: firstRecommend[0], base: firstRecommend[1] },
+  colors: { bg: firstRecommend.bg, base: firstRecommend.base },
   target: 'base', // 「色を個別に選ぶ」で変える方
   fileType: 'png',
   weekendColors: false,
+  weekStart: 1,        // 1 = 月曜始まり、0 = 日曜始まり
+  weekLabel: 'upper',  // WEEK_LABELS のキー
+  // 書体。'default' などの候補の id、'local:書体名'（パソコンの書体）、'file:id'（読み込んだ書体）
+  fonts: { num: 'default', credit: 'default' },
   tab: 'recommend',
   recommendIndex: 0,
   credit: 'Your Name',
@@ -549,7 +674,7 @@ function holidaysOf(y) {
 const isHoliday = date => holidaysOf(date.getFullYear()).has(`${date.getMonth() + 1}-${date.getDate()}`);
 
 function monthCells(year, month) {
-  const lead = (new Date(year, month - 1, 1).getDay() + 6) % 7; // 月曜始まり
+  const lead = (new Date(year, month - 1, 1).getDay() - state.weekStart + 7) % 7;
   const cells = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(year, month - 1, 1 - lead + i);
@@ -558,15 +683,39 @@ function monthCells(year, month) {
   return cells;
 }
 
-// Figmaの「日曜日」「土曜日」の色。背景と近くて読めないときはベースの色にする
+// 日曜・祝日は赤、土曜は青。背景と近いときは、色みを保ったまま読める濃さ（明るさ）に寄せる
 const SUN_COLOR = '#e10004';
 const SAT_COLOR = '#118ab2';
 function dayColor(weekday, holiday) {
   const { bg, base } = state.colors;
   if (!state.weekendColors) return base;
-  const color = weekday === 0 || holiday ? SUN_COLOR : weekday === 6 ? SAT_COLOR : base;
-  return contrast(bg, color) >= MIN_CONTRAST ? color : base;
+  const color = weekday === 0 || holiday ? SUN_COLOR : weekday === 6 ? SAT_COLOR : null;
+  return color ? weekendTone(bg, base, color) : base;
 }
+
+// 背景に対して読める濃さにした候補を、暗くする方向と明るくする方向の両方で作り、
+// ベースの色といちばん見分けやすいものを選ぶ（赤い背景で日曜が淡いピンクになり、淡いベースと区別できない、を避ける）
+const weekendCache = new Map();
+function weekendTone(bg, base, color) {
+  const key = bg + base + color;
+  if (weekendCache.has(key)) return weekendCache.get(key);
+  const dist = (a, b) => { const x = hexToRgb(a), y = hexToRgb(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+  const candidates = [];
+  for (const toward of [shade, tint]) {
+    for (let t = 0; t <= 0.95; t += 0.05) {
+      const c = toward(color, t);
+      if (contrast(bg, c) >= PRESET_CONTRAST) { candidates.push(c); break; }
+    }
+  }
+  const best = candidates.length
+    ? candidates.sort((a, b) => dist(b, base) - dist(a, base))[0]
+    : readableOn(bg, color);
+  weekendCache.set(key, best);
+  return best;
+}
+
+// 表示する順の曜日（0 = 日曜）
+const weekOrder = () => Array.from({ length: 7 }, (_, i) => (state.weekStart + i) % 7);
 
 // 出力ピクセルで W×H の範囲に描く。ctx は呼び出し側で拡大縮小してよい
 function draw(ctx, W, H) {
@@ -604,23 +753,26 @@ function draw(ctx, W, H) {
   ctx.fillStyle = c.base;
   ctx.textAlign = 'center';
 
-  boxText(ctx, String(state.month), X(356), Y(150.5), 96 * f, 400, NUM_FONT);
-  boxText(ctx, String(state.year), X(356.5), Y(200.5), 36 * f, 400, NUM_FONT);
+  const nf = fontSpec('num');
+  const cf = fontSpec('credit');
+  boxText(ctx, String(state.month), X(356), Y(150.5), 96 * f, nf.weight, nf.family);
+  boxText(ctx, String(state.year), X(356.5), Y(200.5), 36 * f, nf.weight, nf.family);
 
   const colX = i => X(452.52 + i * 39.568);
-  WEEK.forEach((w, i) => {
-    ctx.fillStyle = dayColor((i + 1) % 7, false);
-    boxText(ctx, w, colX(i), Y(81), 12 * f, 400, NUM_FONT);
+  const labels = WEEK_LABELS[state.weekLabel];
+  weekOrder().forEach((wd, i) => {
+    ctx.fillStyle = dayColor(wd, false);
+    boxText(ctx, labels[wd], colX(i), Y(81), 12 * f, nf.weight, nf.family);
   });
   monthCells(state.year, state.month).forEach((cell, i) => {
     ctx.fillStyle = dayColor(cell.weekday, cell.holiday);
-    boxText(ctx, String(cell.day), colX(i % 7), Y(111.5 + Math.floor(i / 7) * 30), 24 * f, 400, NUM_FONT, cell.inMonth ? 1 : 0.3);
+    boxText(ctx, String(cell.day), colX(i % 7), Y(111.5 + Math.floor(i / 7) * 30), 24 * f, nf.weight, nf.family, cell.inMonth ? 1 : 0.3);
   });
   ctx.fillStyle = c.base;
 
-  if ('fontStretch' in ctx) ctx.fontStretch = 'extra-condensed';
-  if (state.credit.trim()) boxText(ctx, state.credit.trim(), D / 2, Y(393), 16 * f, 900, CREDIT_FONT);
-  if (state.handle.trim()) boxText(ctx, state.handle.trim(), D / 2, Y(410), 12 * f, 900, CREDIT_FONT);
+  if ('fontStretch' in ctx) ctx.fontStretch = cf.stretch;
+  if (state.credit.trim()) boxText(ctx, state.credit.trim(), D / 2, Y(393), 16 * f, cf.weight, cf.family);
+  if (state.handle.trim()) boxText(ctx, state.handle.trim(), D / 2, Y(410), 12 * f, cf.weight, cf.family);
   if ('fontStretch' in ctx) ctx.fontStretch = 'normal';
 
   ctx.restore();
@@ -809,15 +961,103 @@ async function exportCurrent() {
 /* ---------- フォント ---------- */
 
 // 日本語は使う文字ごとに分割配信されるので、入力が変わるたびにその文字を読み込む
+// 読み込んだ書体ファイル。{ id, name, family, blob }
+const uploadedFonts = [];
+// パソコンの書体（Chrome・Edge で許可されたときだけ埋まる）
+let localFamilies = [];
+// 保存していた書体ファイルを読み終えたか。読み終える前は、選択を「標準」に戻さない
+let fontsRestored = false;
+
+// いま選ばれている書体を、canvas に渡せる形にする
+function fontSpec(kind) {
+  const v = state.fonts[kind] || 'default';
+  if (v.startsWith('local:')) return { family: `"${v.slice(6)}"${FONT_FALLBACK}`, weight: 400, stretch: 'normal' };
+  if (v.startsWith('file:')) {
+    const f = uploadedFonts.find(x => x.id === v.slice(5));
+    if (f) return { family: `"${f.family}"${FONT_FALLBACK}`, weight: 400, stretch: 'normal' };
+  }
+  const c = FONT_CHOICES[kind].find(x => x.id === v) || FONT_CHOICES[kind][0];
+  return { family: c.family + FONT_FALLBACK, weight: c.weight, stretch: c.stretch || 'normal' };
+}
+
+// 日本語は使う文字ごとに分割配信されるので、入力が変わるたびにその文字を読み込む
 function fontsReady() {
+  const nf = fontSpec('num');
+  const cf = fontSpec('credit');
   const credit = `${state.credit}${state.handle}` || 'A';
+  const nums = '0123456789' + Object.values(WEEK_LABELS).flat().join('');
+  const stretch = cf.stretch === 'normal' ? '' : `${cf.stretch} `;
   return Promise.all([
-    document.fonts.load(`400 96px "Konkhmer Sleokchher"`, '0123456789MONTUEWDHFRISA'),
-    document.fonts.load(`extra-condensed 900 16px "Noto Sans"`, credit),
-    document.fonts.load(`900 16px "Noto Sans JP"`, credit),
+    document.fonts.load(`${nf.weight} 96px ${nf.family}`, nums),
+    document.fonts.load(`${stretch}${cf.weight} 16px ${cf.family}`, credit),
+    document.fonts.load(`900 16px "Noto Sans JP"`, credit + nums),
   ]).then(sets => {
-    if (sets[0].length === 0) console.warn('Konkhmer Sleokchher を読み込めなかったため、代わりの書体で描画しています');
+    if (state.fonts.num === 'default' && sets[0].length === 0) console.warn('Konkhmer Sleokchher を読み込めなかったため、代わりの書体で描画しています');
   });
+}
+
+async function addFontFile(blob, name, { persist = true, id = String(Date.now()) } = {}) {
+  const family = `O-Calendar-User-${id}`;
+  const face = new FontFace(family, await blob.arrayBuffer());
+  await face.load(); // 壊れたファイルや対応していない形式はここで失敗する
+  document.fonts.add(face);
+  uploadedFonts.push({ id, name, family, blob });
+  if (persist) storeFonts();
+  return id;
+}
+
+function storeFonts() {
+  const data = uploadedFonts.map(({ id, name, blob }) => ({ id, name, blob }));
+  imageStore('readwrite', store => store.put(data, 'fonts'))
+    .catch(err => console.warn('書体を保存できませんでした', err));
+}
+
+async function restoreFonts() {
+  try {
+    const list = await imageStore('readonly', store => store.get('fonts'));
+    for (const f of list || []) {
+      await addFontFile(f.blob, f.name, { persist: false, id: f.id })
+        .catch(err => console.warn(`保存していた書体を読み込めませんでした（${f.name}）`, err));
+    }
+  } catch (err) {
+    console.warn('保存していた書体を読み込めませんでした', err);
+  }
+}
+
+function renderFontSelects() {
+  document.querySelectorAll('.font-row').forEach(row => {
+    const kind = row.dataset.font;
+    const sel = row.querySelector('select');
+    const groups = [['', FONT_CHOICES[kind].map(c => [c.id, c.label])]];
+    if (uploadedFonts.length) groups.push(['読み込んだ書体', uploadedFonts.map(f => [`file:${f.id}`, f.name])]);
+    const current = state.fonts[kind];
+    const local = [...localFamilies];
+    // 前回選んだパソコンの書体は、一覧を出していなくても選べるようにしておく
+    if (current.startsWith('local:') && !local.includes(current.slice(6))) local.unshift(current.slice(6));
+    if (local.length) groups.push(['パソコンの書体', local.map(f => [`local:${f}`, f])]);
+    sel.replaceChildren(...groups.map(([label, items]) => {
+      const parent = label ? Object.assign(document.createElement('optgroup'), { label }) : document.createDocumentFragment();
+      items.forEach(([value, text]) => parent.appendChild(new Option(text, value)));
+      return parent;
+    }));
+    sel.value = current;
+    if (sel.value !== current && fontsRestored) { // 読み込んだ書体が消えていたときなど
+      state.fonts[kind] = 'default';
+      sel.value = 'default';
+    }
+  });
+}
+
+async function showLocalFonts() {
+  try {
+    const fonts = await window.queryLocalFonts();
+    localFamilies = [...new Set(fonts.map(f => f.family))].sort((a, b) => a.localeCompare(b, 'ja'));
+    renderFontSelects();
+    $('fontHint').textContent = `パソコンの書体を ${localFamilies.length} 個、一覧の下に出しました。`;
+  } catch (err) {
+    console.warn(err);
+    $('fontHint').textContent = 'パソコンの書体を読めませんでした。ブラウザの許可を確かめてください。';
+  }
 }
 
 function refreshFonts() {
@@ -887,7 +1127,7 @@ function removeImage(layer) {
 // 色・文字・配置などは localStorage、画像は IndexedDB に入れる。
 // どちらもこのブラウザの中だけ。使えない環境（プライベートモードなど）では保存せずに動く
 const WORK_KEY = 'o-calendar-maker:work';
-const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place'];
+const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place', 'weekStart', 'weekLabel', 'fonts'];
 
 let saveTimer = 0;
 function scheduleSave() {
@@ -1164,16 +1404,17 @@ function setColors(bg, base) {
   render();
 }
 
-function tileFor(bg, base) {
+function tileFor(p) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'tile';
-  b.dataset.bg = bg;
-  b.dataset.base = base;
-  b.style.cssText = `--top:${topTone(bg)};--bg:${bg};--base:${base}`;
+  b.dataset.bg = p.bg;
+  b.dataset.base = p.base;
+  b.style.cssText = `--top:${topTone(p.bg)};--bg:${p.bg};--base:${p.base}`;
   b.textContent = state.month;
-  b.title = `背景 ${bg} / ベース ${base}`;
-  b.addEventListener('click', () => setColors(bg, base));
+  b.title = `${p.month ? `${p.month}月・` : ''}${p.name}（${p.kind}）`;
+  b.setAttribute('aria-label', b.title);
+  b.addEventListener('click', () => setColors(p.bg, p.base));
   return b;
 }
 
@@ -1181,13 +1422,13 @@ function renderTiles() {
   const tiles = $('tiles');
   tiles.replaceChildren();
   if (state.tab === 'recommend') {
-    RECOMMEND[state.month].forEach(([bg, base]) => tiles.appendChild(tileFor(bg, base)));
+    RECOMMEND[state.month].forEach(p => tiles.appendChild(tileFor(p)));
     const note = document.createElement('p');
     note.className = 'tile-note';
-    note.textContent = `${state.month}月のイメージに合わせた組み合わせです。`;
+    note.textContent = `${state.month}月の伝統色（${TRADITIONAL[state.month].map(c => c[0]).join('・')}）から作った組み合わせです。`;
     tiles.appendChild(note);
   } else {
-    PRESETS[state.tab].forEach(p => tiles.appendChild(tileFor(p.bg, p.base)));
+    PRESETS[state.tab].forEach(p => tiles.appendChild(tileFor(p)));
   }
   markTiles();
 }
@@ -1200,7 +1441,7 @@ function markTiles() {
 }
 
 function renderTabs() {
-  const tabs = [{ id: 'recommend', label: 'おすすめ' }, ...PALETTE.map(p => ({ id: p.id, label: `${p.label}（${PRESETS[p.id].length}）` }))];
+  const tabs = [{ id: 'recommend', label: 'おすすめ' }, ...SEASONS.map(p => ({ id: p.id, label: `${p.label}（${PRESETS[p.id].length}）` }))];
   $('tabs').replaceChildren(...tabs.map(t => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1220,24 +1461,31 @@ function renderTabs() {
 function renderPalette() {
   const pal = $('palette');
   pal.replaceChildren();
-  for (const p of PALETTE) {
-    const label = document.createElement('span');
-    label.textContent = p.label;
-    pal.appendChild(label);
-    [...p.light, ...p.strong].forEach(hex => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.style.background = hex;
-      b.dataset.hex = hex;
-      b.title = hex;
-      b.setAttribute('aria-label', hex);
-      b.addEventListener('click', () => {
-        state.colors[state.target] = hex;
-        syncColorUi();
-        render();
-      });
-      pal.appendChild(b);
+  // 季節ごとに、伝統色の行と、その淡い色の行を並べる
+  const chip = ([name, hex]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.background = hex;
+    b.dataset.hex = hex;
+    b.title = `${name} ${hex}`;
+    b.setAttribute('aria-label', b.title);
+    b.addEventListener('click', () => {
+      state.colors[state.target] = hex;
+      syncColorUi();
+      render();
     });
+    return b;
+  };
+  const row = (label, colors) => {
+    const span = document.createElement('span');
+    span.textContent = label;
+    pal.append(span, ...colors.map(chip));
+    for (let i = colors.length; i < 12; i++) pal.appendChild(document.createElement('i'));
+  };
+  for (const s of SEASONS) {
+    const colors = s.id === 'mono' ? MONO : s.months.flatMap(m => TRADITIONAL[m]);
+    row(s.label, colors);
+    row('', colors.map(([name, hex]) => [`${name}（淡）`, tint(hex, 0.87)]));
   }
 }
 
@@ -1259,6 +1507,73 @@ function syncColorUi() {
 
 function syncRecommendUi() {
   $('recommend').textContent = `★ おすすめ（${state.month}月）`;
+}
+
+function syncWeekUi() {
+  const mark = (id, value) => document.querySelectorAll(`#${id} button`).forEach(b => {
+    const on = b.dataset.value === String(value);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on);
+  });
+  mark('weekStart', state.weekStart);
+  mark('weekLabel', state.weekLabel);
+}
+
+/* ---------- 設定欄の幅（境目のドラッグ） ---------- */
+
+const PANEL_KEY = 'o-calendar-maker:panel-width';
+const PANEL_DEFAULT = 340;
+const PANEL_MIN = 280;
+
+function setPanelWidth(w, save = true) {
+  const layout = document.querySelector('.layout');
+  const max = Math.max(PANEL_MIN, layout.clientWidth * 0.6);
+  const width = Math.round(Math.min(max, Math.max(PANEL_MIN, w)));
+  layout.style.setProperty('--panel-w', `${width}px`);
+  $('splitter').setAttribute('aria-valuenow', width);
+  if (save) {
+    try { localStorage.setItem(PANEL_KEY, String(width)); } catch (err) { console.warn('設定欄の幅を保存できませんでした', err); }
+  }
+  render();
+  return width;
+}
+
+function initSplitter() {
+  const splitter = $('splitter');
+  const panel = document.querySelector('.panel');
+  let saved = NaN;
+  try { saved = Number(localStorage.getItem(PANEL_KEY)); } catch (err) { console.warn(err); }
+  if (saved) setPanelWidth(saved, false);
+
+  let startX = 0;
+  let startW = 0;
+  splitter.addEventListener('pointerdown', e => {
+    splitter.setPointerCapture(e.pointerId);
+    startX = e.clientX;
+    startW = panel.getBoundingClientRect().width;
+    splitter.classList.add('dragging');
+    document.body.classList.add('resizing');
+  });
+  splitter.addEventListener('pointermove', e => {
+    if (!splitter.classList.contains('dragging')) return;
+    // 境目を左へ動かすほど、右の設定欄が広がる
+    setPanelWidth(startW + (startX - e.clientX), false);
+  });
+  const end = () => {
+    if (!splitter.classList.contains('dragging')) return;
+    splitter.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+    setPanelWidth(panel.getBoundingClientRect().width);
+  };
+  splitter.addEventListener('pointerup', end);
+  splitter.addEventListener('pointercancel', end);
+  splitter.addEventListener('dblclick', () => setPanelWidth(PANEL_DEFAULT));
+  splitter.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const step = e.shiftKey ? 64 : 16;
+    setPanelWidth(panel.getBoundingClientRect().width + (e.key === 'ArrowLeft' ? step : -step));
+  });
 }
 
 function shiftMonth(delta) {
@@ -1289,6 +1604,11 @@ function applySavedWork(saved) {
   if (typeof saved.credit === 'string') state.credit = saved.credit;
   if (typeof saved.handle === 'string') state.handle = saved.handle;
   state.weekendColors = saved.weekendColors === true;
+  if (saved.weekStart === 0 || saved.weekStart === 1) state.weekStart = saved.weekStart;
+  if (WEEK_LABELS[saved.weekLabel]) state.weekLabel = saved.weekLabel;
+  if (saved.fonts && typeof saved.fonts.num === 'string' && typeof saved.fonts.credit === 'string') {
+    state.fonts = { num: saved.fonts.num, credit: saved.fonts.credit };
+  }
   const p = saved.place;
   if (p && [p.x, p.y, p.s].every(Number.isFinite)) state.place = { x: p.x, y: p.y, s: p.s };
 }
@@ -1331,8 +1651,8 @@ function init() {
   $('recommend').addEventListener('click', () => {
     const list = RECOMMEND[state.month];
     state.recommendIndex = (state.recommendIndex + 1) % list.length;
-    const [bg, base] = list[state.recommendIndex];
-    setColors(bg, base);
+    const p = list[state.recommendIndex];
+    setColors(p.bg, p.base);
   });
   $('customColor').addEventListener('input', () => {
     state.colors[state.target] = $('customColor').value;
@@ -1414,6 +1734,52 @@ function init() {
   refreshFonts();
 
   $('weekendColors').addEventListener('change', e => { state.weekendColors = e.target.checked; render(); });
+
+  // 週の始まり・曜日の表記
+  const bindSeg = (id, key, parse) => document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => {
+    state[key] = parse(b.dataset.value);
+    syncWeekUi();
+    render();
+    refreshFonts();
+  }));
+  bindSeg('weekStart', 'weekStart', Number);
+  bindSeg('weekLabel', 'weekLabel', String);
+  syncWeekUi();
+
+  // 書体
+  renderFontSelects();
+  document.querySelectorAll('.font-row').forEach(row => row.querySelector('select').addEventListener('change', e => {
+    state.fonts[row.dataset.font] = e.target.value;
+    render();
+    refreshFonts();
+  }));
+  $('fontFile').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const id = await addFontFile(file, file.name.replace(/\.[^.]+$/, ''));
+      state.fonts.num = `file:${id}`;
+      renderFontSelects();
+      $('fontHint').textContent = `「${file.name}」を読み込み、数字・曜日の書体にしました。クレジットにも一覧から選べます。`;
+      render();
+      refreshFonts();
+    } catch (err) {
+      console.error(err);
+      $('fontHint').textContent = `「${file.name}」は書体として読み込めませんでした（.ttf / .otf / .woff / .woff2 に対応）。`;
+    }
+  });
+  if ('queryLocalFonts' in window) {
+    $('localFonts').hidden = false;
+    $('localFonts').addEventListener('click', showLocalFonts);
+  }
+  restoreFonts().then(() => {
+    fontsRestored = true;
+    renderFontSelects();
+    refreshFonts();
+  });
+
+  initSplitter();
   $('resetAll').addEventListener('click', resetAll);
   // 閉じる直前の変更も保存する
   window.addEventListener('pagehide', saveWork);
