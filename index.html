@@ -119,7 +119,10 @@ button.primary:disabled { opacity: .6; cursor: progress; }
 .seg button { border: 0; border-radius: 0; background: var(--field); color: var(--sub); padding: 7px 0; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.font-row .field { margin-bottom: 8px; }
+.font-row { margin-bottom: 10px; }
+.font-row .field { margin-bottom: 4px; }
+.tune { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px; color: var(--sub); }
+.tune output { float: right; font-variant-numeric: tabular-nums; }
 .small-btn { font-size: 12px; padding: 5px 10px; }
 
 /* イラストの裏・表 */
@@ -312,15 +315,23 @@ footer.foot b { font-weight: 600; color: var(--ink); }
       <h2>書体</h2>
       <div class="font-row" data-font="num">
         <label class="field">数字・曜日<select></select></label>
+        <div class="tune">
+          <label>大きさ <output data-out="size"></output><input type="range" data-tune="size" min="70" max="130" step="1"></label>
+          <label>字間 <output data-out="spacing"></output><input type="range" data-tune="spacing" min="-10" max="40" step="1"></label>
+        </div>
       </div>
       <div class="font-row" data-font="credit">
         <label class="field">クレジット<select></select></label>
+        <div class="tune">
+          <label>大きさ <output data-out="size"></output><input type="range" data-tune="size" min="70" max="130" step="1"></label>
+          <label>字間 <output data-out="spacing"></output><input type="range" data-tune="spacing" min="-10" max="40" step="1"></label>
+        </div>
       </div>
       <div class="row wrap">
         <label class="file-btn small"><input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"><span>書体ファイルを読み込む</span></label>
         <button id="localFonts" class="small-btn" hidden>パソコンの書体を一覧に出す</button>
       </div>
-      <p class="hint" id="fontHint" style="margin:8px 0 0">読み込んだ書体は、両方の一覧に「読み込んだ書体」として出ます。</p>
+      <p class="hint" id="fontHint" style="margin:8px 0 0">書体を変えると、数字の高さと位置は自動で揃えます。気になるときは大きさと字間で手直しできます（書体を変えると元に戻ります）。</p>
     </section>
 
     <section class="group">
@@ -354,7 +365,7 @@ footer.foot b { font-weight: 600; color: var(--ink); }
 </footer>
 
 <script>
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const DPI = 300;
 
 // 書体の候補。family は canvas に渡す font-family（先頭がない環境では後ろに順に代わる）。
@@ -364,7 +375,8 @@ const SYSTEM_FONTS = [
   { id: 'avenir',    label: 'Avenir Next',            family: '"Avenir Next", Avenir, "Segoe UI"', weight: 700 },
   { id: 'futura',    label: 'Futura',                 family: 'Futura, "Century Gothic"', weight: 700 },
   { id: 'helvetica', label: 'Helvetica Neue / Arial', family: '"Helvetica Neue", Helvetica, Arial', weight: 700 },
-  { id: 'georgia',   label: 'Georgia（セリフ）',       family: 'Georgia, "Times New Roman"', weight: 700 },
+  // Georgia は数字の高さが不ぞろい（オールドスタイル数字）でカレンダーに向かないので、高さのそろう Didot にする
+  { id: 'didot',     label: 'Didot（セリフ）',         family: 'Didot, "Bodoni 72", "Times New Roman"', weight: 700 },
   { id: 'gothic',    label: 'ヒラギノ角ゴ / 游ゴシック', family: '"Hiragino Sans", "Yu Gothic", YuGothic, Meiryo', weight: 700 },
   { id: 'maru',      label: 'ヒラギノ丸ゴ / 丸ゴシック', family: '"Hiragino Maru Gothic ProN", "Arial Rounded MT Bold", "Yu Gothic"', weight: 400 },
   { id: 'mincho',    label: 'ヒラギノ明朝 / 游明朝',     family: '"Hiragino Mincho ProN", "Yu Mincho", YuMincho', weight: 600 },
@@ -559,6 +571,8 @@ const state = {
   weekLabel: 'upper',  // WEEK_LABELS のキー
   // 書体。'default' などの候補の id、'local:書体名'（パソコンの書体）、'file:id'（読み込んだ書体）
   fonts: { num: 'default', credit: 'default' },
+  // 書体ごとの手直し。size は %（自動で合わせた大きさに対して）、spacing は字間（1em に対する %）
+  fontTune: { num: { size: 100, spacing: 0 }, credit: { size: 100, spacing: 0 } },
   tab: 'recommend',
   recommendIndex: 0,
   credit: 'Your Name',
@@ -611,15 +625,52 @@ function defaultPlace() {
 
 /* ---------- 描画 ---------- */
 
-// Figmaのテキストボックス（行の高さ = フォント既定）の中心を cx, cy に合わせて描く
-function boxText(ctx, text, cx, cy, size, weight, family, alpha = 1) {
-  ctx.font = `${weight} ${size}px ${family}`;
-  const m = ctx.measureText(text);
-  const asc = m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent;
-  const desc = m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent;
+function setFont(ctx, spec, size) {
+  ctx.font = `${spec.weight} ${size}px ${spec.family}`;
+  if ('fontStretch' in ctx) ctx.fontStretch = spec.stretch;
+}
+
+// 選んだ書体の文字を、標準の書体で描いたときと「見た目の高さ」と「見た目の中心」が同じになるように描く。
+// 書体ごとに数字の高さや行の上下の余白が違うので、文字の実際の形（インク）で測って合わせる。
+// 標準の書体・調整なしのときは、Figma と同じ置き方（行の箱の中心を cy に合わせる）とまったく同じ位置になる
+//   sample: 高さの基準にする文字（日付なら 0〜9）
+//   maxWidth: これより広いと隣とぶつかる幅。標準の書体の幅より狭くはしない
+//   tune: { size: 倍率, spacing: 字間（1em あたりの割合） }
+function fitText(ctx, text, { cx, cy, size, spec, ref, sample, maxWidth, tune, alpha = 1 }) {
+  setFont(ctx, ref, size);
+  const r = ctx.measureText(sample);
+  const refBase = cy - (r.fontBoundingBoxAscent + r.fontBoundingBoxDescent) / 2 + r.fontBoundingBoxAscent;
+  const refCenter = refBase - (r.actualBoundingBoxAscent - r.actualBoundingBoxDescent) / 2;
+  const refHeight = r.actualBoundingBoxAscent + r.actualBoundingBoxDescent;
+  const refWidth = ctx.measureText(text).width;
+
+  let s = size;
+  if (spec !== ref) {
+    setFont(ctx, spec, size);
+    const m = ctx.measureText(sample);
+    const h = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+    if (h > 0) s = size * refHeight / h;
+  }
+  s *= tune.size;
+
+  // 字間。canvas は最後の文字の後ろにも字間を足すので、中央に置くときはその半分ずらす
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${tune.spacing * s}px`;
+  setFont(ctx, spec, s);
+  const limit = Math.max(maxWidth, refWidth);
+  const w = ctx.measureText(text).width;
+  if (w > limit) {
+    s *= limit / w;
+    setFont(ctx, spec, s);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = `${tune.spacing * s}px`;
+  }
+  const m = ctx.measureText(sample);
+  const base = refCenter + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  const shift = 'letterSpacing' in ctx ? tune.spacing * s / 2 : 0;
   ctx.globalAlpha = alpha;
-  ctx.fillText(text, cx, cy - (asc + desc) / 2 + asc);
+  ctx.fillText(text, cx + shift, base);
   ctx.globalAlpha = 1;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  if ('fontStretch' in ctx) ctx.fontStretch = 'normal';
 }
 
 /* ---------- 祝日 ---------- */
@@ -753,27 +804,34 @@ function draw(ctx, W, H) {
   ctx.fillStyle = c.base;
   ctx.textAlign = 'center';
 
-  const nf = fontSpec('num');
-  const cf = fontSpec('credit');
-  boxText(ctx, String(state.month), X(356), Y(150.5), 96 * f, nf.weight, nf.family);
-  boxText(ctx, String(state.year), X(356.5), Y(200.5), 36 * f, nf.weight, nf.family);
+  const num = { spec: fontSpec('num'), ref: fontSpec('num', true), tune: fontTune('num') };
+  const cre = { spec: fontSpec('credit'), ref: fontSpec('credit', true), tune: fontTune('credit') };
+  const DIGITS = '0123456789';
+  const PITCH = 39.568; // 日付の列の間隔
+  // 月の数字と年は、カレンダーの左端（の少し手前）まで。中心 356 から左右に 66 ずつ
+  fitText(ctx, String(state.month), { cx: X(356), cy: Y(150.5), size: 96 * f, sample: DIGITS, maxWidth: 132 * f, ...num });
+  fitText(ctx, String(state.year), { cx: X(356.5), cy: Y(200.5), size: 36 * f, sample: DIGITS, maxWidth: 132 * f, ...num });
 
-  const colX = i => X(452.52 + i * 39.568);
+  const colX = i => X(452.52 + i * PITCH);
   const labels = WEEK_LABELS[state.weekLabel];
   weekOrder().forEach((wd, i) => {
     ctx.fillStyle = dayColor(wd, false);
-    boxText(ctx, labels[wd], colX(i), Y(81), 12 * f, nf.weight, nf.family);
+    fitText(ctx, labels[wd], { cx: colX(i), cy: Y(81), size: 12 * f, sample: labels.join(''), maxWidth: PITCH * 0.95 * f, ...num });
   });
   monthCells(state.year, state.month).forEach((cell, i) => {
-    ctx.fillStyle = dayColor(cell.weekday, cell.holiday);
-    boxText(ctx, String(cell.day), colX(i % 7), Y(111.5 + Math.floor(i / 7) * 30), 24 * f, nf.weight, nf.family, cell.inMonth ? 1 : 0.3);
+    // 前月・翌月の日付は、土日祝日でも色を付けずにベースの色で薄く出す
+    ctx.fillStyle = cell.inMonth ? dayColor(cell.weekday, cell.holiday) : c.base;
+    fitText(ctx, String(cell.day), {
+      cx: colX(i % 7), cy: Y(111.5 + Math.floor(i / 7) * 30), size: 24 * f,
+      sample: DIGITS, maxWidth: PITCH * 0.84 * f, alpha: cell.inMonth ? 1 : 0.3, ...num, // 標準の「28」と同じくらいの隙間を残す
+    });
   });
   ctx.fillStyle = c.base;
 
-  if ('fontStretch' in ctx) ctx.fontStretch = cf.stretch;
-  if (state.credit.trim()) boxText(ctx, state.credit.trim(), D / 2, Y(393), 16 * f, cf.weight, cf.family);
-  if (state.handle.trim()) boxText(ctx, state.handle.trim(), D / 2, Y(410), 12 * f, cf.weight, cf.family);
-  if ('fontStretch' in ctx) ctx.fontStretch = 'normal';
+  const credit = state.credit.trim();
+  const handle = state.handle.trim();
+  if (credit) fitText(ctx, credit, { cx: D / 2, cy: Y(393), size: 16 * f, sample: credit, maxWidth: 900 * f, ...cre });
+  if (handle) fitText(ctx, handle, { cx: D / 2, cy: Y(410), size: 12 * f, sample: handle, maxWidth: 900 * f, ...cre });
 
   ctx.restore();
 }
@@ -969,15 +1027,28 @@ let localFamilies = [];
 let fontsRestored = false;
 
 // いま選ばれている書体を、canvas に渡せる形にする
-function fontSpec(kind) {
-  const v = state.fonts[kind] || 'default';
+function fontSpec(kind, standard = false) {
+  const v = standard ? 'default' : state.fonts[kind] || 'default';
   if (v.startsWith('local:')) return { family: `"${v.slice(6)}"${FONT_FALLBACK}`, weight: 400, stretch: 'normal' };
   if (v.startsWith('file:')) {
     const f = uploadedFonts.find(x => x.id === v.slice(5));
     if (f) return { family: `"${f.family}"${FONT_FALLBACK}`, weight: 400, stretch: 'normal' };
   }
   const c = FONT_CHOICES[kind].find(x => x.id === v) || FONT_CHOICES[kind][0];
+  if (c.id === 'default') return STANDARD_FONT[kind];
   return { family: c.family + FONT_FALLBACK, weight: c.weight, stretch: c.stretch || 'normal' };
+}
+
+// 標準の書体は毎回同じオブジェクトを返す（fitText で「標準の書体か」を比べるため）
+const STANDARD_FONT = Object.fromEntries(['num', 'credit'].map(kind => {
+  const c = FONT_CHOICES[kind][0];
+  return [kind, { family: c.family + FONT_FALLBACK, weight: c.weight, stretch: c.stretch || 'normal' }];
+}));
+
+// 書体ごとの手直し（大きさ・字間）。state には % で持つ
+function fontTune(kind) {
+  const t = state.fontTune[kind];
+  return { size: t.size / 100, spacing: t.spacing / 100 };
 }
 
 // 日本語は使う文字ごとに分割配信されるので、入力が変わるたびにその文字を読み込む
@@ -991,6 +1062,9 @@ function fontsReady() {
     document.fonts.load(`${nf.weight} 96px ${nf.family}`, nums),
     document.fonts.load(`${stretch}${cf.weight} 16px ${cf.family}`, credit),
     document.fonts.load(`900 16px "Noto Sans JP"`, credit + nums),
+    // 書体を変えても、大きさと位置は標準の書体で測って合わせるので、標準の書体も読み込んでおく
+    document.fonts.load(`400 96px "Konkhmer Sleokchher"`, nums),
+    document.fonts.load(`extra-condensed 900 16px "Noto Sans"`, credit),
   ]).then(sets => {
     if (state.fonts.num === 'default' && sets[0].length === 0) console.warn('Konkhmer Sleokchher を読み込めなかったため、代わりの書体で描画しています');
   });
@@ -1127,7 +1201,7 @@ function removeImage(layer) {
 // 色・文字・配置などは localStorage、画像は IndexedDB に入れる。
 // どちらもこのブラウザの中だけ。使えない環境（プライベートモードなど）では保存せずに動く
 const WORK_KEY = 'o-calendar-maker:work';
-const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place', 'weekStart', 'weekLabel', 'fonts'];
+const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place', 'weekStart', 'weekLabel', 'fonts', 'fontTune'];
 
 let saveTimer = 0;
 function scheduleSave() {
@@ -1509,6 +1583,15 @@ function syncRecommendUi() {
   $('recommend').textContent = `★ おすすめ（${state.month}月）`;
 }
 
+function syncTuneUi() {
+  document.querySelectorAll('.font-row').forEach(row => {
+    const t = state.fontTune[row.dataset.font];
+    row.querySelectorAll('input[data-tune]').forEach(input => { input.value = t[input.dataset.tune]; });
+    row.querySelector('[data-out=size]').textContent = `${t.size}%`;
+    row.querySelector('[data-out=spacing]').textContent = `${t.spacing > 0 ? '+' : ''}${t.spacing}`;
+  });
+}
+
 function syncWeekUi() {
   const mark = (id, value) => document.querySelectorAll(`#${id} button`).forEach(b => {
     const on = b.dataset.value === String(value);
@@ -1608,6 +1691,10 @@ function applySavedWork(saved) {
   if (WEEK_LABELS[saved.weekLabel]) state.weekLabel = saved.weekLabel;
   if (saved.fonts && typeof saved.fonts.num === 'string' && typeof saved.fonts.credit === 'string') {
     state.fonts = { num: saved.fonts.num, credit: saved.fonts.credit };
+  }
+  for (const kind of ['num', 'credit']) {
+    const t = saved.fontTune?.[kind];
+    if (t && Number.isFinite(t.size) && Number.isFinite(t.spacing)) state.fontTune[kind] = { size: t.size, spacing: t.spacing };
   }
   const p = saved.place;
   if (p && [p.x, p.y, p.s].every(Number.isFinite)) state.place = { x: p.x, y: p.y, s: p.s };
@@ -1748,11 +1835,22 @@ function init() {
 
   // 書体
   renderFontSelects();
-  document.querySelectorAll('.font-row').forEach(row => row.querySelector('select').addEventListener('change', e => {
-    state.fonts[row.dataset.font] = e.target.value;
-    render();
-    refreshFonts();
-  }));
+  document.querySelectorAll('.font-row').forEach(row => {
+    const kind = row.dataset.font;
+    row.querySelector('select').addEventListener('change', e => {
+      state.fonts[kind] = e.target.value;
+      state.fontTune[kind] = { size: 100, spacing: 0 };
+      syncTuneUi();
+      render();
+      refreshFonts();
+    });
+    row.querySelectorAll('input[data-tune]').forEach(input => input.addEventListener('input', () => {
+      state.fontTune[kind][input.dataset.tune] = Number(input.value);
+      syncTuneUi();
+      render();
+    }));
+  });
+  syncTuneUi();
   $('fontFile').addEventListener('change', async e => {
     const file = e.target.files[0];
     e.target.value = '';
@@ -1760,7 +1858,9 @@ function init() {
     try {
       const id = await addFontFile(file, file.name.replace(/\.[^.]+$/, ''));
       state.fonts.num = `file:${id}`;
+      state.fontTune.num = { size: 100, spacing: 0 };
       renderFontSelects();
+      syncTuneUi();
       $('fontHint').textContent = `「${file.name}」を読み込み、数字・曜日の書体にしました。クレジットにも一覧から選べます。`;
       render();
       refreshFonts();
