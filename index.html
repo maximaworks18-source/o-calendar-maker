@@ -119,6 +119,15 @@ button.primary:disabled { opacity: .6; cursor: progress; }
 .seg button { border: 0; border-radius: 0; background: var(--field); color: var(--sub); padding: 7px 0; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.anim-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 0; }
+.anim-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.anim-item img { width: 24px; height: 52px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+.anim-item span { flex: 1; }
+.anim-item button { padding: 3px 8px; font-size: 12px; }
+#animPreview { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 10px; margin: 10px 0 8px; }
+.anim-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; margin-top: 12px; }
+.anim-opts .field { font-size: 12px; }
+.anim-opts input[type=color] { display: block; margin-top: 4px; }
 .font-row { margin-bottom: 10px; }
 .font-row .field { margin-bottom: 4px; }
 .tune { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px; color: var(--sub); }
@@ -356,6 +365,39 @@ footer.foot b { font-weight: 600; color: var(--ink); }
       <button class="primary" id="export"></button>
       <p class="status" id="status" aria-live="polite"></p>
     </section>
+
+    <section class="group">
+      <h2>回転アニメ（GIF・動画）</h2>
+      <p class="hint">スマホが上下にゆれながら、いちばん下でくるっと1回転して次の待受に切り替わるアニメを作ります。月やイラストを変えるたびに追加して並べてください（1枚だけなら回らずにゆれます）。</p>
+      <button id="animAdd" type="button" style="width:100%"></button>
+      <div class="anim-list" id="animList" hidden></div>
+      <canvas id="animPreview" width="600" height="600" aria-label="回転アニメのプレビュー"></canvas>
+      <button id="animPlay" type="button" style="width:100%">▶ 再生</button>
+      <div class="anim-opts">
+        <label class="field">大きさ<select id="animSize"><option value="600">600×600</option><option value="800">800×800</option><option value="1080">1080×1080</option></select></label>
+        <label class="field">なめらかさ<select id="animFps"><option value="15">15コマ/秒</option><option value="20">20コマ/秒</option><option value="25">25コマ/秒</option></select></label>
+        <label class="field">上下の往復 <output id="animPeriodOut"></output><input type="range" id="animPeriod" min="2" max="8" step="0.5"></label>
+        <label class="field">回る時間 <output id="animSpinOut"></output><input type="range" id="animSpin" min="0.6" max="2" step="0.1"></label>
+        <label class="field">背景の色<input type="color" id="animBg"></label>
+        <label class="field">本体の色<input type="color" id="animBody"></label>
+      </div>
+      <div class="field" style="margin:8px 0 0">背景
+        <div class="seg" id="animBgMode" role="radiogroup" aria-label="アニメの背景">
+          <button type="button" data-value="color" role="radio">色</button>
+          <button type="button" data-value="clear" role="radio">透過</button>
+        </div>
+      </div>
+      <p class="hint" id="animClearHint" style="margin:4px 0 0" hidden>透過の GIF は、影やスマホの縁の半透明を細かい点で表します。透過の動画は WebM で書き出します（MP4 は透過を持てません）。</p>
+      <label class="check"><input type="checkbox" id="animShadow">床の影を入れる</label>
+      <label class="check"><input type="checkbox" id="animClock">画面に時計と日付を入れる</label>
+      <label class="field" style="margin-top:6px">時刻<input id="animTime" type="text" maxlength="8"></label>
+      <div class="actions" style="margin-top:4px">
+        <button class="primary" id="animGif" type="button">GIFで保存</button>
+        <button class="primary" id="animVideo" type="button">動画で保存</button>
+      </div>
+      <p class="hint" style="margin:0">GIF は 600 がおすすめです（大きいとファイルが重くなります）。動画は MP4、ブラウザによっては WebM になります。</p>
+      <p class="status" id="animStatus" aria-live="polite"></p>
+    </section>
   </aside>
 </main>
 
@@ -366,7 +408,7 @@ footer.foot b { font-weight: 600; color: var(--ink); }
 </footer>
 
 <script>
-const VERSION = 'v1.2.1';
+const VERSION = 'v1.3.0';
 const DPI = 300;
 
 // 書体の候補。family は canvas に渡す font-family（先頭がない環境では後ろに順に代わる）。
@@ -574,6 +616,8 @@ const state = {
   fonts: { num: 'default', credit: 'default' },
   // 書体ごとの手直し。size は %（自動で合わせた大きさに対して）、spacing は字間（1em に対する %）
   fontTune: { num: { size: 100, spacing: 0 }, credit: { size: 100, spacing: 0 } },
+  // 回転アニメの設定。hold / spin は秒
+  anim: { size: 600, fps: 15, period: 4, spin: 1.2, bg: '#f3efe9', transparent: false, shadow: true, body: '#2b2b30', clock: true, time: '9:41' },
   tab: 'recommend',
   recommendIndex: 0,
   credit: 'Your Name',
@@ -885,8 +929,7 @@ function download(blob, name) {
 // iPhone は共有メニューの「画像を保存」で写真に入る。ダウンロードだと「ファイル」に入ってしまう
 const useShare = window.matchMedia('(pointer: coarse)').matches && typeof navigator.canShare === 'function';
 
-function deliver(blob, name) {
-  const status = $('status');
+function deliver(blob, name, status = $('status')) {
   status.className = 'status';
   const file = new File([blob], name, { type: blob.type });
   if (!useShare || !navigator.canShare({ files: [file] })) {
@@ -1202,7 +1245,7 @@ function removeImage(layer) {
 // 色・文字・配置などは localStorage、画像は IndexedDB に入れる。
 // どちらもこのブラウザの中だけ。使えない環境（プライベートモードなど）では保存せずに動く
 const WORK_KEY = 'o-calendar-maker:work';
-const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place', 'weekStart', 'weekLabel', 'fonts', 'fontTune'];
+const WORK_FIELDS = ['colors', 'tab', 'format', 'device', 'fileType', 'credit', 'handle', 'weekendColors', 'place', 'weekStart', 'weekLabel', 'fonts', 'fontTune', 'anim'];
 
 let saveTimer = 0;
 function scheduleSave() {
@@ -1675,6 +1718,927 @@ function onMonthChange() {
   render();
 }
 
+/* ---------- 回転アニメ（GIF・動画） ---------- */
+
+// スマホが1回転するたびに次の待受に切り替わるアニメ。3D は WebGL、GIF は自前の書き出し、動画は MediaRecorder。
+// 外部のライブラリを使わないので、BOOTH 版（ネットなし）でも動く
+const ANIM_MAX = 12;
+const SHOT_W = 780;  // 待受の縦横比（1170×2532）の 2/3。アニメの画面に貼るのでこれで足りる
+const SHOT_H = 1688;
+const TEX_W = 1024;  // 画面のテクスチャ。斜めでもにじまないよう、ミップマップを使えるように 2 の累乗にする
+const TEX_H = 2048;
+const animItems = []; // { id, blob, img, url, month, year, base, bg }
+let animPlaying = false;
+let animStartAt = 0;
+let animBusy = false;
+
+// スマホの置き方。左下から右上へ斜めに寝かせ、画面がこちらを向くようにする
+//   tilt: 画面の中での傾き（z 軸）、lean: 上を奥へ倒す（x 軸）、yaw: 縦の軸で少しひねる、float: 上下にゆれる幅
+const ANIM_VIEW = { tilt: -0.72, lean: -0.42, yaw: -0.18, camera: 5.5, float: 0.17 };
+
+// 1枚につき、上下に1往復するあいだに1回転する。1枚だけなら回らない
+function animTimeline() {
+  const seg = state.anim.period;
+  return { seg, total: Math.max(1, animItems.length) * seg };
+}
+
+const easeInOut = p => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+
+// t 秒目のスマホの向きと、どの待受を映すか
+function animPose(t) {
+  const a = state.anim;
+  const n = Math.max(1, animItems.length);
+  const { seg, total } = animTimeline();
+  t = ((t % total) + total) % total;
+  const i = Math.min(n - 1, Math.floor(t / seg));
+  const u = t - i * seg;
+  // いちばん上から始まり、半分のところでいちばん下、終わりでまた上に戻る
+  const float = Math.cos((u / seg) * Math.PI * 2) * ANIM_VIEW.float;
+  if (n < 2) return { spin: 0, float, index: 0 };
+  // いちばん下（下がりきって上がり始めるところ）を真ん中にして回る
+  const spin = Math.min(a.spin, seg * 0.9);
+  const from = seg / 2 - spin / 2;
+  if (u < from) return { spin: 0, float, index: i };
+  if (u > from + spin) return { spin: 0, float, index: (i + 1) % n };
+  const e = easeInOut((u - from) / spin);
+  // 背中がこちらを向いている間（半回転のところ）で次の待受に差し替える
+  return { spin: e * Math.PI * 2, float, index: e < 0.5 ? i : (i + 1) % n };
+}
+
+/* --- 画面（待受＋時計・日付） --- */
+
+async function lockScreenFontsReady() {
+  await Promise.all([
+    document.fonts.load('400 40px "Konkhmer Sleokchher"', `0123456789:${state.anim.time}`),
+    document.fonts.load('900 20px "Noto Sans JP"', '0123456789月日曜火水木金土'),
+  ]).catch(err => console.warn('時計の書体を読み込めませんでした', err));
+}
+
+function screenCanvas(item) {
+  const c = document.createElement('canvas');
+  c.width = TEX_W;
+  c.height = TEX_H;
+  const ctx = c.getContext('2d');
+  ctx.scale(TEX_W / SHOT_W, TEX_H / SHOT_H);
+  ctx.drawImage(item.img, 0, 0, SHOT_W, SHOT_H);
+  const W = SHOT_W;
+  const H = SHOT_H;
+  if (state.anim.clock) {
+    const day = new Date(item.year, item.month - 1, 1);
+    ctx.fillStyle = item.base;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `900 ${H * 0.026}px "Noto Sans JP", "Hiragino Sans", sans-serif`;
+    ctx.fillText(`${item.month}月${day.getDate()}日 ${'日月火水木金土'[day.getDay()]}曜日`, W / 2, H * 0.105);
+    ctx.font = `400 ${H * 0.115}px "Konkhmer Sleokchher", "Avenir Next", sans-serif`;
+    ctx.fillText(state.anim.time || '9:41', W / 2, H * 0.215);
+  }
+  // 画面上の小さなカメラの穴
+  ctx.fillStyle = '#111114';
+  ctx.beginPath();
+  ctx.arc(W / 2, H * 0.027, W * 0.024, 0, Math.PI * 2);
+  ctx.fill();
+  return c;
+}
+
+/* --- 3D（WebGL） --- */
+
+const M4 = {
+  persp(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2);
+    const nf = 1 / (near - far);
+    return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+  },
+  // a・b（列優先）
+  mul(a, b) {
+    const o = new Float32Array(16);
+    for (let c = 0; c < 4; c++) {
+      for (let r = 0; r < 4; r++) {
+        let s = 0;
+        for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+        o[c * 4 + r] = s;
+      }
+    }
+    return o;
+  },
+  tr: (x, y, z) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]),
+  rx: t => { const c = Math.cos(t), s = Math.sin(t); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); },
+  ry: t => { const c = Math.cos(t), s = Math.sin(t); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); },
+  rz: t => { const c = Math.cos(t), s = Math.sin(t); return new Float32Array([c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); },
+};
+
+// 角丸の長方形の輪郭（反時計回り、y は上向き）
+function roundedOutline(w, h, r, seg = 12) {
+  const pts = [];
+  const corners = [[w / 2 - r, h / 2 - r, 0], [-w / 2 + r, h / 2 - r, 90], [-w / 2 + r, -h / 2 + r, 180], [w / 2 - r, -h / 2 + r, 270]];
+  for (const [cx, cy, start] of corners) {
+    for (let k = 0; k <= seg; k++) {
+      const a = (start + (90 * k) / seg) * Math.PI / 180;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
+  return pts;
+}
+
+// 厚みのある角丸の板（本体）と、前面に貼る画面。頂点は [x, y, z, 法線x, y, z, u, v]
+function phoneMesh() {
+  const SW = 0.94;
+  const SH = SW * 2532 / 1170;
+  const B = 0.045; // 画面のまわりの縁
+  const W = SW + B * 2;
+  const H = SH + B * 2;
+  const R = 0.17;
+  const D = 0.1;
+  const zf = D / 2;
+  const zb = -D / 2;
+  const body = [];
+  const screen = [];
+  const push = (arr, p, n, uv = [0, 0]) => arr.push(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]);
+
+  const o = roundedOutline(W, H, R);
+  for (let i = 0; i < o.length; i++) {
+    const a = o[i];
+    const b = o[(i + 1) % o.length];
+    push(body, [0, 0, zf], [0, 0, 1]); push(body, [a[0], a[1], zf], [0, 0, 1]); push(body, [b[0], b[1], zf], [0, 0, 1]);
+    push(body, [0, 0, zb], [0, 0, -1]); push(body, [b[0], b[1], zb], [0, 0, -1]); push(body, [a[0], a[1], zb], [0, 0, -1]);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l = Math.hypot(dx, dy) || 1;
+    const n = [dy / l, -dx / l, 0];
+    push(body, [a[0], a[1], zf], n); push(body, [b[0], b[1], zf], n); push(body, [b[0], b[1], zb], n);
+    push(body, [a[0], a[1], zf], n); push(body, [b[0], b[1], zb], n); push(body, [a[0], a[1], zb], n);
+  }
+
+  const so = roundedOutline(SW, SH, R - B);
+  const zs = zf + 0.002;
+  const uv = p => [p[0] / SW + 0.5, 0.5 - p[1] / SH];
+  for (let i = 0; i < so.length; i++) {
+    const a = so[i];
+    const b = so[(i + 1) % so.length];
+    push(screen, [0, 0, zs], [0, 0, 1], [0.5, 0.5]);
+    push(screen, [a[0], a[1], zs], [0, 0, 1], uv(a));
+    push(screen, [b[0], b[1], zs], [0, 0, 1], uv(b));
+  }
+  // 背面のカメラ（背中が見えたときにスマホだと分かるように）。後ろから見て左上
+  const camera = [];
+  const lens = [];
+  const zc = zb - 0.012;
+  const cw = 0.36;
+  const ccx = W / 2 - 0.08 - cw / 2;
+  const ccy = H / 2 - 0.08 - cw / 2;
+  const co = roundedOutline(cw, cw, 0.09);
+  for (let i = 0; i < co.length; i++) {
+    const a = co[i];
+    const b = co[(i + 1) % co.length];
+    push(camera, [ccx, ccy, zc], [0, 0, -1]);
+    push(camera, [ccx + b[0], ccy + b[1], zc], [0, 0, -1]);
+    push(camera, [ccx + a[0], ccy + a[1], zc], [0, 0, -1]);
+  }
+  for (const [lx, ly] of [[0.075, 0.075], [-0.075, -0.075]]) {
+    const r = 0.06;
+    for (let k = 0; k < 24; k++) {
+      const a0 = (k / 24) * Math.PI * 2;
+      const a1 = ((k + 1) / 24) * Math.PI * 2;
+      push(lens, [ccx + lx, ccy + ly, zc - 0.006], [0, 0, -1]);
+      push(lens, [ccx + lx + r * Math.cos(a1), ccy + ly + r * Math.sin(a1), zc - 0.006], [0, 0, -1]);
+      push(lens, [ccx + lx + r * Math.cos(a0), ccy + ly + r * Math.sin(a0), zc - 0.006], [0, 0, -1]);
+    }
+  }
+  return { body: new Float32Array(body), screen: new Float32Array(screen), camera: new Float32Array(camera), lens: new Float32Array(lens) };
+}
+
+const PHONE_VS = `
+attribute vec3 aPos; attribute vec3 aNor; attribute vec2 aUv;
+uniform mat4 uModel; uniform mat4 uVP; uniform mat3 uNormal;
+varying vec3 vNor; varying vec2 vUv; varying vec3 vWorld;
+void main() {
+  vec4 w = uModel * vec4(aPos, 1.0);
+  vWorld = w.xyz; vNor = uNormal * aNor; vUv = aUv;
+  gl_Position = uVP * w;
+}`;
+const PHONE_FS = `
+precision mediump float;
+uniform int uMode; uniform vec3 uColor; uniform sampler2D uTex;
+uniform vec3 uLight; uniform vec3 uEye; uniform float uSheen;
+varying vec3 vNor; varying vec2 vUv; varying vec3 vWorld;
+void main() {
+  vec3 n = normalize(vNor);
+  vec3 v = normalize(uEye - vWorld);
+  if (dot(n, v) < 0.0) n = -n;
+  float diff = max(dot(n, uLight), 0.0);
+  float spec = pow(max(dot(n, normalize(uLight + v)), 0.0), 48.0);
+  if (uMode == 1) {
+    vec3 c = texture2D(uTex, vUv).rgb;
+    float facing = max(dot(n, v), 0.0);
+    // ガラスへの映り込み（回ると斜めの帯が流れる）
+    float band = 1.0 - smoothstep(0.0, 0.18, abs(vUv.x * 0.7 + vUv.y * 0.3 - uSheen));
+    c = c * (0.86 + 0.14 * facing) + vec3(0.035) * band + vec3(0.07) * spec;
+    gl_FragColor = vec4(c, 1.0);
+  } else {
+    vec3 c = uColor * (0.4 + 0.6 * diff) + vec3(0.16) * spec;
+    gl_FragColor = vec4(c, 1.0);
+  }
+}`;
+
+let phoneGL = null;
+
+function getPhoneGL() {
+  if (phoneGL) return phoneGL;
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer: true });
+  if (!gl) throw new Error('このブラウザでは 3D の表示（WebGL）が使えません');
+  const shader = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`3D の準備に失敗しました: ${gl.getShaderInfoLog(s)}`);
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, PHONE_VS));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, PHONE_FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`3D の準備に失敗しました: ${gl.getProgramInfoLog(prog)}`);
+  const mesh = phoneMesh();
+  const buffer = data => {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    return { b, count: data.length / 8 };
+  };
+  const u = name => gl.getUniformLocation(prog, name);
+  phoneGL = {
+    canvas, gl, prog,
+    body: buffer(mesh.body),
+    screen: buffer(mesh.screen),
+    camera: buffer(mesh.camera),
+    lens: buffer(mesh.lens),
+    attr: { pos: gl.getAttribLocation(prog, 'aPos'), nor: gl.getAttribLocation(prog, 'aNor'), uv: gl.getAttribLocation(prog, 'aUv') },
+    uni: { model: u('uModel'), vp: u('uVP'), normal: u('uNormal'), mode: u('uMode'), color: u('uColor'), tex: u('uTex'), light: u('uLight'), eye: u('uEye'), sheen: u('uSheen') },
+    aniso: gl.getExtension('EXT_texture_filter_anisotropic') || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic'),
+    textures: new Map(),
+  };
+  return phoneGL;
+}
+
+function phoneTexture(item) {
+  const g = getPhoneGL();
+  if (g.textures.has(item.id)) return g.textures.get(item.id);
+  const gl = g.gl;
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenCanvas(item));
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (g.aniso) gl.texParameterf(gl.TEXTURE_2D, g.aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(g.aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+  g.textures.set(item.id, tex);
+  return tex;
+}
+
+// 時計の設定を変えたときなど、画面を作り直す
+function clearPhoneTextures(id = null) {
+  if (!phoneGL) return;
+  for (const [key, tex] of phoneGL.textures) {
+    if (id && key !== id) continue;
+    phoneGL.gl.deleteTexture(tex);
+    phoneGL.textures.delete(key);
+  }
+}
+
+function renderPhone(size, pose) {
+  const g = getPhoneGL();
+  const { gl, attr, uni } = g;
+  if (g.canvas.width !== size) {
+    g.canvas.width = size;
+    g.canvas.height = size;
+  }
+  gl.viewport(0, 0, size, size);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(g.prog);
+
+  const v = ANIM_VIEW;
+  const yaw = v.yaw + pose.spin;
+  const model = M4.mul(M4.tr(0, 0.06 + pose.float, 0), M4.mul(M4.rz(v.tilt), M4.mul(M4.rx(v.lean), M4.ry(yaw))));
+  const vp = M4.mul(M4.persp((30 * Math.PI) / 180, 1, 0.1, 50), M4.tr(0, 0, -v.camera));
+  gl.uniformMatrix4fv(uni.model, false, model);
+  gl.uniformMatrix4fv(uni.vp, false, vp);
+  gl.uniformMatrix3fv(uni.normal, false, new Float32Array([model[0], model[1], model[2], model[4], model[5], model[6], model[8], model[9], model[10]]));
+  const l = [-0.45, 0.65, 0.8];
+  const ln = Math.hypot(...l);
+  gl.uniform3f(uni.light, l[0] / ln, l[1] / ln, l[2] / ln);
+  gl.uniform3f(uni.eye, 0, 0, v.camera);
+  gl.uniform1f(uni.sheen, 0.5 + 0.7 * Math.sin(yaw));
+
+  const bind = buf => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.b);
+    const set = (loc, n, off) => {
+      if (loc < 0) return;
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 32, off);
+    };
+    set(attr.pos, 3, 0);
+    set(attr.nor, 3, 12);
+    set(attr.uv, 2, 24);
+  };
+
+  const [r, gg, b] = hexToRgb(state.anim.body).map(v => v / 255);
+  gl.uniform1i(uni.mode, 0);
+  gl.uniform3f(uni.color, r, gg, b);
+  bind(g.body);
+  gl.drawArrays(gl.TRIANGLES, 0, g.body.count);
+  // カメラの台は本体より少し明るく、レンズは暗く
+  gl.uniform3f(uni.color, Math.min(1, r * 1.25 + 0.04), Math.min(1, gg * 1.25 + 0.04), Math.min(1, b * 1.25 + 0.04));
+  bind(g.camera);
+  gl.drawArrays(gl.TRIANGLES, 0, g.camera.count);
+  gl.uniform3f(uni.color, 0.06, 0.06, 0.08);
+  bind(g.lens);
+  gl.drawArrays(gl.TRIANGLES, 0, g.lens.count);
+
+  const item = animItems[pose.index];
+  if (item) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, phoneTexture(item));
+    gl.uniform1i(uni.tex, 0);
+    gl.uniform1i(uni.mode, 1);
+    bind(g.screen);
+    gl.drawArrays(gl.TRIANGLES, 0, g.screen.count);
+  }
+  return g.canvas;
+}
+
+// 透過のときにプレビューで敷く市松模様
+function drawChecker(ctx, size) {
+  const n = 12;
+  const cell = size / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      ctx.fillStyle = (x + y) % 2 ? '#e4e4e4' : '#ffffff';
+      ctx.fillRect(x * cell, y * cell, cell + 1, cell + 1);
+    }
+  }
+}
+
+// 背景・床の影・スマホを重ねて1コマを描く。checker はプレビューで透過を見せるため
+function drawAnimFrame(ctx, size, t, { checker = false } = {}) {
+  const pose = animPose(t);
+  const a = state.anim;
+  ctx.clearRect(0, 0, size, size);
+  if (!a.transparent) {
+    ctx.fillStyle = a.bg;
+    ctx.fillRect(0, 0, size, size);
+  } else if (checker) {
+    drawChecker(ctx, size);
+  }
+  if (a.shadow) drawFloorShadow(ctx, size, pose);
+  ctx.drawImage(renderPhone(size, pose), 0, 0, size, size);
+}
+
+// 床の影。横を向くほど細く、上がるほど小さく薄くする
+function drawFloorShadow(ctx, size, pose) {
+  const lift = (pose.float / ANIM_VIEW.float + 1) / 2; // 0 = いちばん下、1 = いちばん上
+  const w = size * 0.3 * (0.5 + 0.5 * Math.abs(Math.cos(ANIM_VIEW.yaw + pose.spin))) * (1 - lift * 0.25);
+  ctx.save();
+  ctx.translate(size * 0.53, size * 0.9);
+  ctx.scale(1, 0.15);
+  const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, w);
+  grd.addColorStop(0, `rgba(30, 25, 20, ${0.3 - lift * 0.12})`);
+  grd.addColorStop(1, 'rgba(30, 25, 20, 0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(0, 0, w, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* --- GIF の書き出し --- */
+
+// 4×4 の網目のディザ。コマごとに模様が変わらないので、ちらつきにくい
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+// 1コマを 256 色に減らす（メディアンカット）。各色 5bit の箱で数える。
+// transparent のときは 255 番を透明にあて、色は 255 色まで。GIF は半透明を持てないので、
+// 半透明のところ（影やスマホの縁）は網目のディザで「透明の点」と「色の点」の粗密にする
+const GIF_CLEAR = 255;
+function quantizeFrame(rgba, w, h, transparent = false) {
+  const hist = new Uint32Array(32768);
+  for (let i = 0; i < rgba.length; i += 8) {
+    if (transparent && rgba[i + 3] < 128) continue;
+    hist[((rgba[i] >> 3) << 10) | ((rgba[i + 1] >> 3) << 5) | (rgba[i + 2] >> 3)]++;
+  }
+  const keys = [];
+  for (let k = 0; k < 32768; k++) if (hist[k]) keys.push(k);
+  const ch = (k, a) => (a === 0 ? k >> 10 : a === 1 ? (k >> 5) & 31 : k & 31);
+  const makeBox = list => {
+    const min = [31, 31, 31];
+    const max = [0, 0, 0];
+    let count = 0;
+    for (const k of list) {
+      for (let a = 0; a < 3; a++) {
+        const v = ch(k, a);
+        if (v < min[a]) min[a] = v;
+        if (v > max[a]) max[a] = v;
+      }
+      count += hist[k];
+    }
+    return { list, count, range: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
+  };
+  const maxColors = transparent ? 255 : 256;
+  const boxes = keys.length ? [makeBox(keys)] : [];
+  while (boxes.length < maxColors) {
+    let best = -1;
+    let score = 0;
+    boxes.forEach((b, i) => {
+      if (b.list.length < 2) return;
+      const s = b.count * (Math.max(...b.range) + 1);
+      if (s > score) { score = s; best = i; }
+    });
+    if (best < 0) break;
+    const box = boxes[best];
+    const axis = box.range.indexOf(Math.max(...box.range));
+    const sorted = box.list.slice().sort((a, b) => ch(a, axis) - ch(b, axis));
+    let acc = 0;
+    let cut = 1;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      acc += hist[sorted[i]];
+      if (acc >= box.count / 2) { cut = i + 1; break; }
+      cut = i + 1;
+    }
+    boxes.splice(best, 1, makeBox(sorted.slice(0, cut)), makeBox(sorted.slice(cut)));
+  }
+  const palette = new Uint8Array(768);
+  boxes.forEach((b, i) => {
+    let r = 0, g = 0, bl = 0;
+    for (const k of b.list) {
+      const n = hist[k];
+      r += (ch(k, 0) * 8 + 4) * n;
+      g += (ch(k, 1) * 8 + 4) * n;
+      bl += (ch(k, 2) * 8 + 4) * n;
+    }
+    palette[i * 3] = Math.round(r / b.count);
+    palette[i * 3 + 1] = Math.round(g / b.count);
+    palette[i * 3 + 2] = Math.round(bl / b.count);
+  });
+  const nColors = boxes.length;
+  const lut = new Int16Array(32768).fill(-1);
+  const indices = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      const o = p * 4;
+      const bayer = BAYER4[((y & 3) << 2) | (x & 3)];
+      if (transparent && rgba[o + 3] < (bayer + 0.5) * 16) {
+        indices[p] = GIF_CLEAR;
+        continue;
+      }
+      const d = bayer - 7.5;
+      const r = Math.max(0, Math.min(255, rgba[o] + d)) >> 3;
+      const g = Math.max(0, Math.min(255, rgba[o + 1] + d)) >> 3;
+      const b = Math.max(0, Math.min(255, rgba[o + 2] + d)) >> 3;
+      const key = (r << 10) | (g << 5) | b;
+      let idx = lut[key];
+      if (idx < 0 && nColors === 0) idx = 0;
+      if (idx < 0) {
+        const cr = r * 8 + 4, cg = g * 8 + 4, cb = b * 8 + 4;
+        let bestD = Infinity;
+        for (let i = 0; i < nColors; i++) {
+          const dr = palette[i * 3] - cr, dg = palette[i * 3 + 1] - cg, db = palette[i * 3 + 2] - cb;
+          const dist = dr * dr * 2 + dg * dg * 4 + db * db * 3;
+          if (dist < bestD) { bestD = dist; idx = i; }
+        }
+        lut[key] = idx;
+      }
+      indices[p] = idx;
+    }
+  }
+  return { palette, indices };
+}
+
+// GIF の LZW 圧縮。辞書は「前の符号 << 8 | 次の色」を直接の添字にした表（0 は空き、符号 + 1 を入れる）
+const LZW_TABLE = new Int16Array(1 << 20);
+function lzwEncode(indices, minCode = 8) {
+  const clearCode = 1 << minCode;
+  const eoi = clearCode + 1;
+  let codeSize = minCode + 1;
+  let next = eoi + 1;
+  let clearFlag = false;
+  const used = new Int32Array(4096);
+  let usedN = 0;
+  let buf = new Uint8Array(Math.max(1024, indices.length >> 1));
+  let pos = 0;
+  let cur = 0;
+  let bits = 0;
+  const putByte = v => {
+    if (pos >= buf.length) {
+      const nb = new Uint8Array(buf.length * 2);
+      nb.set(buf);
+      buf = nb;
+    }
+    buf[pos++] = v;
+  };
+  const emit = code => {
+    cur |= code << bits;
+    bits += codeSize;
+    while (bits >= 8) {
+      putByte(cur & 255);
+      cur >>>= 8;
+      bits -= 8;
+    }
+    if (clearFlag) {
+      codeSize = minCode + 1;
+      clearFlag = false;
+    } else if (next > (1 << codeSize) - 1 && codeSize < 12) {
+      codeSize++;
+    }
+  };
+  const resetTable = () => {
+    for (let j = 0; j < usedN; j++) LZW_TABLE[used[j]] = 0;
+    usedN = 0;
+  };
+  emit(clearCode);
+  let prefix = indices[0];
+  for (let i = 1; i < indices.length; i++) {
+    const k = indices[i];
+    const key = (prefix << 8) | k;
+    const hit = LZW_TABLE[key];
+    if (hit) {
+      prefix = hit - 1;
+      continue;
+    }
+    emit(prefix);
+    if (next < 4096) {
+      LZW_TABLE[key] = next + 1;
+      used[usedN++] = key;
+      next++;
+    } else {
+      resetTable();
+      next = eoi + 1;
+      clearFlag = true;
+      emit(clearCode);
+    }
+    prefix = k;
+  }
+  emit(prefix);
+  emit(eoi);
+  if (bits > 0) putByte(cur & 255);
+  resetTable();
+  // 255 バイトずつのかたまりに分ける
+  const out = new Uint8Array(1 + pos + Math.ceil(pos / 255) + 1);
+  let o = 0;
+  out[o++] = minCode;
+  for (let i = 0; i < pos; i += 255) {
+    const n = Math.min(255, pos - i);
+    out[o++] = n;
+    out.set(buf.subarray(i, i + n), o);
+    o += n;
+  }
+  out[o++] = 0;
+  return out.subarray(0, o);
+}
+
+class GifWriter {
+  constructor(w, h, transparent = false) {
+    this.w = w;
+    this.h = h;
+    this.transparent = transparent;
+    const head = [71, 73, 70, 56, 57, 97, w & 255, w >> 8, h & 255, h >> 8, 0x70, 0, 0];
+    // 繰り返し再生（NETSCAPE2.0、回数 0 = ずっと）
+    const loop = [0x21, 0xff, 0x0b, ...'NETSCAPE2.0'.split('').map(c => c.charCodeAt(0)), 0x03, 0x01, 0x00, 0x00, 0x00];
+    this.parts = [new Uint8Array([...head, ...loop])];
+  }
+
+  addFrame(rgba, delayCs) {
+    const { w, h, transparent } = this;
+    const { palette, indices } = quantizeFrame(rgba, w, h, transparent);
+    // 透過のときは、次のコマの前に背景（透明）へ戻す（処理方法 2）。透明色は 255 番
+    const packed = transparent ? 0x09 : 0x04;
+    this.parts.push(new Uint8Array([
+      0x21, 0xf9, 0x04, packed, delayCs & 255, delayCs >> 8, transparent ? GIF_CLEAR : 0, 0,
+      0x2c, 0, 0, 0, 0, w & 255, w >> 8, h & 255, h >> 8, 0x87,
+    ]));
+    this.parts.push(palette);
+    this.parts.push(lzwEncode(indices));
+  }
+
+  finish() {
+    this.parts.push(new Uint8Array([0x3b]));
+    return new Blob(this.parts, { type: 'image/gif' });
+  }
+}
+
+const nextTick = () => new Promise(r => setTimeout(r, 0));
+
+function setAnimStatus(msg, error = false) {
+  const el = $('animStatus');
+  el.className = error ? 'status error' : 'status';
+  el.textContent = msg;
+}
+
+async function exportAnimGif() {
+  const a = state.anim;
+  const size = a.size;
+  const { total } = animTimeline();
+  const frames = Math.round(total * a.fps);
+  await lockScreenFontsReady();
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const gif = new GifWriter(size, size, a.transparent);
+  for (let f = 0; f < frames; f++) {
+    drawAnimFrame(ctx, size, f / a.fps);
+    // 1/100 秒単位なので、ずれがたまらないように積み上げで丸める
+    const delay = Math.round(((f + 1) * 100) / a.fps) - Math.round((f * 100) / a.fps);
+    gif.addFrame(ctx.getImageData(0, 0, size, size).data, delay);
+    if (f % 2 === 0) {
+      setAnimStatus(`GIF を作っています… ${Math.round(((f + 1) / frames) * 100)}%`);
+      await nextTick();
+    }
+  }
+  const blob = gif.finish();
+  deliver(blob, `calendar_anim_${animItems.length}_${size}.gif`, $('animStatus'));
+  return blob;
+}
+
+// 透過は MP4 では持てないので、透過のときは WebM（VP9・VP8 は透過を持てる）だけを使う
+function pickVideoType(alpha = false) {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const types = alpha
+    ? ['video/webm;codecs=vp9', 'video/webm;codecs=vp8']
+    : ['video/mp4;codecs=avc1.42E01F', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return types.find(t => MediaRecorder.isTypeSupported(t)) || null;
+}
+
+async function exportAnimVideo() {
+  const a = state.anim;
+  const mime = pickVideoType(a.transparent);
+  if (!mime) {
+    throw new Error(a.transparent
+      ? 'このブラウザでは透過の動画を書き出せません。背景を「色」にするか、透過の GIF をお使いください'
+      : 'このブラウザは動画の書き出しに対応していません。GIF をお使いください');
+  }
+  const size = a.size;
+  const { total } = animTimeline();
+  await lockScreenFontsReady();
+  // 録画するキャンバスは画面の外に置く（ブラウザによっては文書の中にないと録画できない）
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  c.style.cssText = 'position:fixed;left:-99999px;top:0;';
+  document.body.appendChild(c);
+  const ctx = c.getContext('2d');
+  drawAnimFrame(ctx, size, 0);
+  try {
+    const stream = c.captureStream(a.fps);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: size >= 1000 ? 10_000_000 : 6_000_000 });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((resolve, reject) => {
+      rec.onstop = resolve;
+      rec.onerror = e => reject(e.error || new Error('録画に失敗しました'));
+    });
+    rec.start();
+    // 録画は実時間で進むので、1周ぶんを実時間で描く
+    const start = performance.now();
+    await new Promise(resolve => {
+      const tick = () => {
+        const t = (performance.now() - start) / 1000;
+        drawAnimFrame(ctx, size, Math.min(t, total));
+        setAnimStatus(`動画を録画しています… ${Math.min(100, Math.round((t / total) * 100))}%（${Math.ceil(total)}秒かかります）`);
+        if (t >= total) resolve();
+        else setTimeout(tick, 1000 / a.fps);
+      };
+      tick();
+    });
+    await new Promise(r => setTimeout(r, 150));
+    rec.stop();
+    await stopped;
+    stream.getTracks().forEach(tr => tr.stop());
+    const type = mime.split(';')[0];
+    const ext = type === 'video/mp4' ? 'mp4' : 'webm';
+    deliver(new Blob(chunks, { type }), `calendar_anim_${animItems.length}_${size}.${ext}`, $('animStatus'));
+  } finally {
+    c.remove();
+  }
+}
+
+async function runAnimExport(kind) {
+  if (animBusy) return;
+  if (!animItems.length) {
+    setAnimStatus('先に「今の待受をアニメに追加」で待受を入れてください。', true);
+    return;
+  }
+  animBusy = true;
+  document.querySelectorAll('#animGif, #animVideo').forEach(b => { b.disabled = true; });
+  try {
+    if (kind === 'gif') await exportAnimGif();
+    else await exportAnimVideo();
+  } catch (err) {
+    console.error(err);
+    setAnimStatus(`書き出せませんでした: ${err.message}`, true);
+  } finally {
+    animBusy = false;
+    document.querySelectorAll('#animGif, #animVideo').forEach(b => { b.disabled = false; });
+  }
+}
+
+/* --- 待受のリスト --- */
+
+async function makeAnimItem(d) {
+  const img = await createImageBitmap(d.blob);
+  return { ...d, img, url: URL.createObjectURL(d.blob) };
+}
+
+function storeAnimItems() {
+  const data = animItems.map(({ id, blob, month, year, base, bg }) => ({ id, blob, month, year, base, bg }));
+  imageStore('readwrite', store => store.put(data, 'animItems'))
+    .catch(err => console.warn('アニメの待受を保存できませんでした', err));
+}
+
+async function restoreAnimItems() {
+  try {
+    const list = await imageStore('readonly', store => store.get('animItems'));
+    for (const d of list || []) animItems.push(await makeAnimItem(d));
+  } catch (err) {
+    console.warn('保存していたアニメの待受を読み込めませんでした', err);
+  }
+}
+
+async function addAnimItem() {
+  if (animItems.length >= ANIM_MAX) {
+    setAnimStatus(`入れられるのは ${ANIM_MAX} 枚までです。`, true);
+    return;
+  }
+  await fontsReady();
+  const c = document.createElement('canvas');
+  c.width = SHOT_W;
+  c.height = SHOT_H;
+  draw(c.getContext('2d'), SHOT_W, SHOT_H);
+  const blob = await canvasToBlob(c, 'image/png');
+  const item = await makeAnimItem({ id: String(Date.now()), blob, month: state.month, year: state.year, base: state.colors.base, bg: state.colors.bg });
+  animItems.push(item);
+  storeAnimItems();
+  renderAnimList();
+  setAnimStatus(`${item.year}年${item.month}月を追加しました（${animItems.length}枚目）。`);
+  drawAnimPreview(0);
+}
+
+function moveAnimItem(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= animItems.length) return;
+  [animItems[i], animItems[j]] = [animItems[j], animItems[i]];
+  storeAnimItems();
+  renderAnimList();
+  drawAnimPreview(0);
+}
+
+function removeAnimItem(i) {
+  const [item] = animItems.splice(i, 1);
+  URL.revokeObjectURL(item.url);
+  clearPhoneTextures(item.id);
+  storeAnimItems();
+  renderAnimList();
+  drawAnimPreview(0);
+}
+
+function renderAnimList() {
+  const list = $('animList');
+  list.hidden = animItems.length === 0;
+  list.replaceChildren(...animItems.map((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'anim-item';
+    const img = document.createElement('img');
+    img.src = it.url;
+    img.alt = '';
+    const label = document.createElement('span');
+    label.textContent = `${i + 1}. ${it.year}年${it.month}月`;
+    const btn = (text, title, fn, disabled = false) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.title = title;
+      b.setAttribute('aria-label', `${label.textContent}を${title}`);
+      b.disabled = disabled;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    row.append(img, label,
+      btn('↑', '前へ', () => moveAnimItem(i, -1), i === 0),
+      btn('↓', '後ろへ', () => moveAnimItem(i, 1), i === animItems.length - 1),
+      btn('×', 'アニメから外す', () => removeAnimItem(i)));
+    return row;
+  }));
+  $('animAdd').textContent = `今の待受をアニメに追加（${animItems.length}/${ANIM_MAX}）`;
+}
+
+/* --- プレビュー --- */
+
+function drawAnimPreview(t) {
+  const c = $('animPreview');
+  const ctx = c.getContext('2d');
+  if (!animItems.length) {
+    ctx.fillStyle = state.anim.bg;
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${c.width * 0.045}px "Hiragino Sans", "Noto Sans JP", sans-serif`;
+    ctx.fillText('待受を追加すると、ここで動きを確かめられます', c.width / 2, c.height / 2);
+    return;
+  }
+  try {
+    drawAnimFrame(ctx, c.width, t, { checker: true });
+  } catch (err) {
+    console.error(err);
+    setAnimStatus(err.message, true);
+    stopAnimPreview();
+  }
+}
+
+function playAnimPreview() {
+  if (!animItems.length) return;
+  animPlaying = true;
+  $('animPlay').textContent = '■ 止める';
+  animStartAt = performance.now();
+  lockScreenFontsReady().then(() => {
+    const loop = now => {
+      if (!animPlaying) return;
+      drawAnimPreview((now - animStartAt) / 1000);
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  });
+}
+
+function stopAnimPreview() {
+  animPlaying = false;
+  $('animPlay').textContent = '▶ 再生';
+}
+
+function syncAnimUi() {
+  const a = state.anim;
+  $('animSize').value = String(a.size);
+  $('animFps').value = String(a.fps);
+  $('animPeriod').value = a.period;
+  $('animPeriodOut').textContent = `${a.period.toFixed(1)}秒`;
+  $('animSpin').value = a.spin;
+  $('animSpinOut').textContent = `${a.spin.toFixed(1)}秒`;
+  $('animBg').value = a.bg;
+  $('animBg').disabled = a.transparent;
+  $('animClearHint').hidden = !a.transparent;
+  $('animShadow').checked = a.shadow;
+  document.querySelectorAll('#animBgMode button').forEach(b => {
+    const on = (b.dataset.value === 'clear') === a.transparent;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on);
+  });
+  $('animBody').value = a.body;
+  $('animClock').checked = a.clock;
+  // 入力中の欄を書き換えるとカーソルが飛ぶので、触っていないときだけ合わせる
+  if (document.activeElement !== $('animTime')) $('animTime').value = a.time;
+  $('animTime').disabled = !a.clock;
+}
+
+function initAnim() {
+  syncAnimUi();
+  renderAnimList();
+  drawAnimPreview(0);
+  $('animAdd').addEventListener('click', () => addAnimItem().catch(err => { console.error(err); setAnimStatus(`追加できませんでした: ${err.message}`, true); }));
+  $('animPlay').addEventListener('click', () => (animPlaying ? stopAnimPreview() : playAnimPreview()));
+  $('animGif').addEventListener('click', () => runAnimExport('gif'));
+  $('animVideo').addEventListener('click', () => runAnimExport('video'));
+  const on = (id, ev, fn) => $(id).addEventListener(ev, () => {
+    fn($(id));
+    syncAnimUi();
+    scheduleSave();
+    if (!animPlaying) drawAnimPreview(0);
+  });
+  on('animSize', 'change', el => { state.anim.size = Number(el.value); });
+  on('animFps', 'change', el => { state.anim.fps = Number(el.value); });
+  on('animPeriod', 'input', el => { state.anim.period = Number(el.value); });
+  on('animSpin', 'input', el => { state.anim.spin = Number(el.value); });
+  on('animBg', 'input', el => { state.anim.bg = el.value; });
+  on('animShadow', 'change', el => { state.anim.shadow = el.checked; });
+  document.querySelectorAll('#animBgMode button').forEach(b => b.addEventListener('click', () => {
+    state.anim.transparent = b.dataset.value === 'clear';
+    syncAnimUi();
+    scheduleSave();
+    if (!animPlaying) drawAnimPreview(0);
+  }));
+  on('animBody', 'input', el => { state.anim.body = el.value; });
+  on('animClock', 'change', el => { state.anim.clock = el.checked; clearPhoneTextures(); });
+  on('animTime', 'input', el => { state.anim.time = el.value.slice(0, 8); clearPhoneTextures(); });
+  restoreAnimItems().then(() => {
+    renderAnimList();
+    lockScreenFontsReady().then(() => drawAnimPreview(0));
+  });
+}
+
 /* ---------- 初期化 ---------- */
 
 // 保存していた作業内容を state に戻す。年月は戻さず、起動時のルール（前半は今月、後半は翌月）を優先する
@@ -1692,6 +2656,20 @@ function applySavedWork(saved) {
   if (WEEK_LABELS[saved.weekLabel]) state.weekLabel = saved.weekLabel;
   if (saved.fonts && typeof saved.fonts.num === 'string' && typeof saved.fonts.credit === 'string') {
     state.fonts = { num: saved.fonts.num, credit: saved.fonts.credit };
+  }
+  const an = saved.anim;
+  if (an && typeof an === 'object') {
+    const a = state.anim;
+    if ([600, 800, 1080].includes(an.size)) a.size = an.size;
+    if ([15, 20, 25].includes(an.fps)) a.fps = an.fps;
+    if (Number.isFinite(an.period)) a.period = Math.min(8, Math.max(2, an.period));
+    if (Number.isFinite(an.spin)) a.spin = Math.min(2, Math.max(0.6, an.spin));
+    if (isHex(an.bg)) a.bg = an.bg;
+    if (isHex(an.body)) a.body = an.body;
+    if (typeof an.clock === 'boolean') a.clock = an.clock;
+    if (typeof an.transparent === 'boolean') a.transparent = an.transparent;
+    if (typeof an.shadow === 'boolean') a.shadow = an.shadow;
+    if (typeof an.time === 'string') a.time = an.time.slice(0, 8);
   }
   for (const kind of ['num', 'credit']) {
     const t = saved.fontTune?.[kind];
@@ -1881,6 +2859,7 @@ function init() {
   });
 
   initSplitter();
+  initAnim();
   $('resetAll').addEventListener('click', resetAll);
   // 閉じる直前の変更も保存する
   window.addEventListener('pagehide', saveWork);
